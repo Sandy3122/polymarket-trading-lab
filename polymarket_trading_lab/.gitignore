@@ -11,4 +11,4 @@ paper_trading.db-shm
 paper_trading.db-wal
 .etherscan_key
 PROMPT.md
-PROGRESS.md
+PROGRESS.md.env.docker

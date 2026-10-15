@@ -8,3 +8,8 @@ __pycache__
 data
 logs
 *.egg-info
+PROGRESS.md
+PROMPT.md
+tests
+.DS_Store
+.env.docker

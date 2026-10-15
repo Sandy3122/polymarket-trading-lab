@@ -89,25 +89,33 @@ The application does not import a Supabase client. Moving to another
 PostgreSQL provider changes the connection string, not the strategy or paper
 engine.
 
-## Deploy later
+## Run with Docker (server or a friend's laptop)
 
-The same application can run locally or in Docker. The API and paper worker
-are separate services in `docker-compose.yml`; both use the same standard
-`DATABASE_URL`. For a hosted PostgreSQL provider, set `DATABASE_URL` in `.env`
-and run migrations before starting services:
+Only Docker is required. Tables are created automatically and the SQLite
+database is stored on a named volume (`trading_data`), so data survives
+restarts and rebuilds.
 
 ```bash
-cp .env.example .env
-# edit DATABASE_URL and other limits
-docker compose run --rm api alembic upgrade head
-docker compose up --build
+docker compose up -d --build     # dashboard: http://localhost:8000
+docker compose logs -f paper-worker
+docker compose down              # stop (data kept); add -v to wipe data
+```
+
+Optional overrides (limits, PostgreSQL `DATABASE_URL`, etc.): create
+`.env.docker` using the keys in `.env.example`. Change the port with
+`PORT=9000 docker compose up -d`.
+
+Share as an image instead of source:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t YOUR_USER/polymarket-lab:latest --push .
+# on the other machine (no source needed):
+docker run -d --name lab -p 8000:8000 -v lab_data:/app/data YOUR_USER/polymarket-lab:latest
+docker run -d --name lab-worker -v lab_data:/app/data YOUR_USER/polymarket-lab:latest polymarket-lab paper-worker
 ```
 
 The container contains no wallet, private key, account credential, or live
 execution configuration.
-
-If Docker Desktop is not running, use the local Python commands above; Docker
-is an optional deployment path, not a runtime requirement.
 
 ## API endpoints
 

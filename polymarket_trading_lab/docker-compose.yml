@@ -1,21 +1,31 @@
+# One-command run:  docker compose up -d   ->  http://localhost:8000
+# Optional: create .env.docker (see .env.example for keys) to override limits
+# or set DATABASE_URL to PostgreSQL. Not required. The local-dev .env is ignored.
+x-lab: &lab
+  build: .
+  image: ${LAB_IMAGE:-polymarket-trading-lab:latest}
+  env_file:
+    - path: .env.docker
+      required: false
+  # Default DB (SQLite) lives on the named volume, set in the Dockerfile.
+  volumes:
+    - trading_data:/app/data
+  restart: unless-stopped
+
 services:
   api:
-    build: .
-    env_file: .env
-    command: ["polymarket-lab", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    <<: *lab
     ports:
-      - "8000:8000"
-    volumes:
-      - trading_data:/app/data
-    restart: unless-stopped
+      - "${PORT:-8000}:8000"
 
   paper-worker:
-    build: .
-    env_file: .env
+    <<: *lab
     command: ["polymarket-lab", "paper-worker"]
-    volumes:
-      - trading_data:/app/data
-    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   trading_data:
