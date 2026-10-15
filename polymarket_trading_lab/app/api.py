@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from pathlib import Path
+
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
@@ -37,6 +41,7 @@ from .worker_lock import WorkerAlreadyRunning
 
 
 app = FastAPI(title="Polymarket Trading Lab", version="0.1.0")
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 
 class MarketCreate(BaseModel):
@@ -290,6 +295,38 @@ def insights(session: Session = Depends(get_session)) -> dict[str, object]:
             ticks=live_quotes.ticks(key), settings=settings, equity=equity,
         ))
     return {"generated_at": _iso(now), "items": rank(items)}
+
+
+@app.get("/live/markets/{market_id}/stream")
+async def live_stream(market_id: int, request: Request) -> StreamingResponse:
+    """Server-Sent Events: pushes every new quote for one market as soon as the worker receives it."""
+
+    with SessionLocal() as session:
+        market = session.get(Market, market_id)
+        key = market.market_key if market else None
+    if key is None:
+        raise HTTPException(404, "market not found")
+
+    async def events():
+        last = None
+        quiet = 0
+        yield "retry: 2000\n\n"
+        while not await request.is_disconnected():
+            quote = live_quotes.latest(key)
+            if quote is not None and quote is not last:
+                last, quiet = quote, 0
+                tick = {"t": _iso(quote.observed_at),
+                        "yes": str(quote.yes_bid) if quote.yes_bid is not None else None,
+                        "no": str(quote.no_bid) if quote.no_bid is not None else None}
+                yield f"data: {json.dumps({'quote': _quote_json(quote), 'tick': tick})}\n\n"
+            else:
+                quiet += 1
+                if quiet % 40 == 0:  # ~10 s keep-alive so proxies/browsers keep the stream open
+                    yield ": keep-alive\n\n"
+            await asyncio.sleep(0.25)
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/live/markets/{market_id}/ticks")
