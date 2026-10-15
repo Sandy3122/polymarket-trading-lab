@@ -109,3 +109,35 @@ def test_runtime_settings_validate_apply_and_persist(session: Session) -> None:
     load_overrides(session, fresh)
     assert fresh.max_daily_loss == Decimal("55")
     assert {f["key"] for f in describe(fresh)} >= {"max_order_exposure", "market_keywords"}
+
+
+def _insight(seconds_left: int, yes: str, no: str, *, yes_size: str = "200", ticks=None, age: int = 0):
+    from app.config import Settings
+    from app.insights import analyze
+
+    now = datetime.now(timezone.utc)
+    q = Quote(now - timedelta(seconds=age), Decimal(yes), Decimal(yes_size), Decimal(no), Decimal("200"))
+    return analyze(market_id=1, question="BTC?", end_time=now + timedelta(seconds=seconds_left), now=now,
+                   quote=q, ticks=ticks or [q], settings=Settings(), equity=Decimal("10000"))
+
+
+def test_insight_verdicts() -> None:
+    assert _insight(600, "0.97", "0.02")["verdict"] == "WAIT"            # too early
+    assert _insight(60, "0.60", "0.38")["verdict"] == "WAIT"             # not near-certain
+    assert _insight(60, "0.90", "0.02")["verdict"] == "AVOID"            # 8¢ spread
+    assert _insight(60, "0.97", "0.02", age=60)["verdict"] == "AVOID"    # stale
+    assert _insight(60, "0.97", "0.02", yes_size="5")["verdict"] == "WAIT"  # thin
+    buy = _insight(60, "0.97", "0.02")
+    assert buy["verdict"] == "BUY" and buy["favourite"] == "YES"
+    s = buy["suggestion"]
+    assert s["entry"] == 0.98 and s["stop"] == 0.93 and s["shares"] >= 1
+    assert s["max_loss_at_stop"] == round(s["shares"] * 0.05, 2)
+    assert s["needed_win_rate_with_stop"] == 0.714  # 0.05 / (0.05 + 0.02)
+
+
+def test_insight_weakening_momentum_waits() -> None:
+    now = datetime.now(timezone.utc)
+    old = Quote(now - timedelta(seconds=70), Decimal("0.99"), Decimal("200"), Decimal("0.01"), Decimal("200"))
+    cur = Quote(now, Decimal("0.96"), Decimal("200"), Decimal("0.03"), Decimal("200"))
+    result = _insight(60, "0.96", "0.03", ticks=[old, cur])
+    assert result["verdict"] == "WAIT" and "weakening" in " ".join(result["reasons"])

@@ -22,6 +22,7 @@ from .accounts import (
 )
 from .dashboard import DASHBOARD_HTML
 from .database import SessionLocal, get_session, init_db
+from .insights import analyze, rank
 from .live import live_quotes
 from .models import AccountActivityRecord, AccountReconciliationRecord, AccountSnapshotRecord, Market, PaperOrder, Position, ReplayDecision, ReplayRun, StrategyDecision, SystemHealth
 from .paper import PaperTrading
@@ -254,6 +255,40 @@ def _quote_json(quote: Any) -> dict[str, object]:
         "yes_bid": text(quote.yes_bid), "yes_ask": text(quote.yes_ask), "yes_bid_size": str(quote.yes_bid_size),
         "no_bid": text(quote.no_bid), "no_ask": text(quote.no_ask), "no_bid_size": str(quote.no_bid_size),
     }
+
+
+@app.get("/live/discovery")
+def live_discovery() -> dict[str, object]:
+    """Last market-discovery result: which markets were kept or filtered out, and why."""
+
+    found = live_quotes.discovery()
+    settings = get_settings()
+    return {
+        "at": _iso(found["at"]) if found["at"] else None,
+        "window_minutes": settings.max_market_duration_minutes + 2,
+        "min_minutes": settings.min_market_duration_minutes, "max_minutes": settings.max_market_duration_minutes,
+        "rows": found["rows"],
+    }
+
+
+@app.get("/insights")
+def insights(session: Session = Depends(get_session)) -> dict[str, object]:
+    """Per-market buy/wait/avoid verdicts from live quotes (rule-based, not a prediction)."""
+
+    now = datetime.now(timezone.utc)
+    settings = get_settings()
+    equity = Decimal(str(portfolio_view(session, _paper_broker(session))["equity"]))
+    items = []
+    for key in live_quotes.keys():
+        market = session.scalar(select(Market).where(Market.market_key == key))
+        quote = live_quotes.latest(key)
+        if market is None or quote is None or market.status != "open":
+            continue
+        items.append(analyze(
+            market_id=market.id, question=market.question, end_time=market.end_time, now=now, quote=quote,
+            ticks=live_quotes.ticks(key), settings=settings, equity=equity,
+        ))
+    return {"generated_at": _iso(now), "items": rank(items)}
 
 
 @app.get("/live/markets/{market_id}/ticks")

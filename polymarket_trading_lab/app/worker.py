@@ -135,13 +135,27 @@ class PaperMarketWorker:
         )
         snapshots = []
         excluded: Counter[str] = Counter()
+        rows: list[dict[str, object]] = []
+        kept_open = 0
         for snapshot in discovered:
             reason = self._exclusion_reason(snapshot)
+            status = reason or "kept"
             if reason is None:
                 snapshots.append(snapshot)
+                if snapshot.status == "open":
+                    kept_open += 1
+                    if kept_open > self.settings.worker_stream_market_limit:
+                        status = "over_stream_limit"
             else:
                 excluded[reason] += 1
                 log.debug("excluded market %s: %s", snapshot.slug, reason)
+            minutes = (snapshot.end_time - snapshot.start_time).total_seconds() / 60 if snapshot.start_time else None
+            rows.append({
+                "market_key": snapshot.market_id, "question": snapshot.question,
+                "end_time": snapshot.end_time.isoformat(), "minutes": round(minutes, 1) if minutes is not None else None,
+                "status": status,
+            })
+        live_quotes.set_discovery(now, rows)
         excluded_summary = ", ".join(f"{k}={v}" for k, v in sorted(excluded.items())) or "none"
         with self.session_factory() as session:
             for snapshot in snapshots:

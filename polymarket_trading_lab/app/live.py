@@ -46,6 +46,7 @@ class LiveQuotes:
         self._lock = threading.Lock()
         self._latest: dict[str, Quote] = {}
         self._ticks: dict[str, deque[Quote]] = {}
+        self._discovery: dict[str, object] = {"at": None, "rows": []}
 
     def record(self, market_key: str, quote: Quote) -> None:
         with self._lock:
@@ -68,6 +69,14 @@ class LiveQuotes:
     def keys(self) -> list[str]:
         with self._lock:
             return list(self._latest)
+
+    def set_discovery(self, at: datetime, rows: list[dict[str, object]]) -> None:
+        with self._lock:
+            self._discovery = {"at": at, "rows": rows[:300]}
+
+    def discovery(self) -> dict[str, object]:
+        with self._lock:
+            return dict(self._discovery)
 
     def clear(self) -> None:
         with self._lock:
