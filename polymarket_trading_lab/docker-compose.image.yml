@@ -1,0 +1,26 @@
+# Run without the source code (only this file + Docker needed):
+#   docker compose -f docker-compose.image.yml up -d    ->  http://localhost:8000
+x-lab: &lab
+  image: ghcr.io/sandy3122/polymarket-trading-lab:latest
+  pull_policy: always
+  volumes:
+    - trading_data:/app/data
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *lab
+    ports:
+      - "${PORT:-8000}:8000"
+
+  paper-worker:
+    <<: *lab
+    command: ["polymarket-lab", "paper-worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  trading_data:

@@ -105,7 +105,12 @@ Optional overrides (limits, PostgreSQL `DATABASE_URL`, etc.): create
 `.env.docker` using the keys in `.env.example`. Change the port with
 `PORT=9000 docker compose up -d`.
 
-Share as an image instead of source:
+Easiest: run `./run.sh` (Mac/Linux) or `run.bat` (Windows); `./run.sh stop` stops it.
+
+Without the source: once the GitHub Action has published the image, only
+`docker-compose.image.yml` is needed: `docker compose -f docker-compose.image.yml up -d`.
+
+Share as an image manually instead:
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 -t YOUR_USER/polymarket-lab:latest --push .
