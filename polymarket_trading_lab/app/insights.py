@@ -46,6 +46,93 @@ def momentum(ticks: list[Quote], token: str, seconds: int = 60) -> float | None:
     return float(last_bid - base)
 
 
+def price_range(ticks: list[Quote], token: str, seconds: int = 120) -> float | None:
+    series = [(t.observed_at, t.bid(token)) for t in ticks if t.bid(token) is not None]
+    if len(series) < 2:
+        return None
+    cutoff = series[-1][0] - timedelta(seconds=seconds)
+    values = [float(bid) for at, bid in series if at >= cutoff]
+    return max(values) - min(values) if len(values) >= 2 else None
+
+
+def _mmss(seconds: float) -> str:
+    m, sec = divmod(max(0, int(seconds)), 60)
+    return f"{m}m {sec:02d}s"
+
+
+def build_checks(
+    seconds_left: float,
+    age: timedelta,
+    bid: Decimal | None,
+    spread: Decimal | None,
+    depth: Decimal,
+    change: float | None,
+    rng: float | None,
+    s: Settings,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The individual tests behind the verdict, plus what would have to change to get a BUY."""
+
+    checks: list[dict[str, Any]] = []
+    steps: list[str] = []
+    window = s.m1_entry_window_seconds
+
+    def add(name: str, status: str, detail: str, step: str | None = None, info: bool = False) -> None:
+        checks.append({"name": name, "status": status, "detail": detail, "info": info})
+        if step and status != "pass":
+            steps.append(step)
+
+    if seconds_left <= 0:
+        add("Timing", "fail", "The market has ended.")
+    elif seconds_left > window:
+        add("Timing", "warn", f"Entry window opens in {_mmss(seconds_left - window)} (last {window}s).", f"Wait {_mmss(seconds_left - window)} for the entry window.")
+    elif seconds_left < LAST_SECONDS:
+        add("Timing", "fail", f"Only {int(seconds_left)}s left — orders may not fill.")
+    else:
+        add("Timing", "pass", f"{_mmss(seconds_left)} left — inside the entry window.")
+
+    add("Fresh data", "pass" if age <= STALE else "fail",
+        f"Last price {int(age.total_seconds())}s ago." , "Wait for fresh price data." if age > STALE else None)
+
+    if bid is None:
+        add("Near-certain favourite", "fail", "No bid on the favourite side.")
+    elif s.m1_min_price < bid <= s.m1_max_price:
+        add("Near-certain favourite", "pass", f"Bid {float(bid):.2f} is inside {float(s.m1_min_price):.2f}–{float(s.m1_max_price):.2f}.")
+    else:
+        need = float(s.m1_min_price - bid) * 100
+        add("Near-certain favourite", "fail", f"Bid {float(bid):.2f} is outside {float(s.m1_min_price):.2f}–{float(s.m1_max_price):.2f} — outcome not near-certain.",
+            f"Favourite bid must rise above {float(s.m1_min_price):.2f} (needs +{need:.0f}¢)." if need > 0 else None)
+
+    if spread is None:
+        add("Spread", "fail", "No ask available.")
+    elif spread <= GOOD_SPREAD:
+        add("Spread", "pass", f"{float(spread)*100:.0f}¢ — cheap to enter.")
+    elif spread <= MAX_SPREAD:
+        add("Spread", "warn", f"{float(spread)*100:.0f}¢ — you lose this the moment you buy.")
+    else:
+        add("Spread", "fail", f"{float(spread)*100:.0f}¢ is too wide.", f"Spread must narrow below {float(MAX_SPREAD)*100:.0f}¢.")
+
+    if depth >= GOOD_DEPTH:
+        add("Depth", "pass", f"{float(depth):.0f} shares bid — easy to exit.")
+    elif depth >= MIN_DEPTH:
+        add("Depth", "warn", f"{float(depth):.0f} shares bid — okay for small size.")
+    else:
+        add("Depth", "fail", f"Only {float(depth):.0f} shares bid — thin book.", f"Needs at least {float(MIN_DEPTH):.0f} shares bid.")
+
+    if change is None:
+        add("Momentum", "warn", "Not enough history yet (needs ~30 s of ticks).")
+    elif change <= -0.03:
+        add("Momentum", "fail", f"Fell {abs(change)*100:.0f}¢ in the last minute — weakening.", "Wait for the price to stop falling.")
+    elif change < 0:
+        add("Momentum", "warn", f"Slipping {change*100:+.0f}¢ in 60 s.")
+    else:
+        add("Momentum", "pass", f"{change*100:+.0f}¢ in 60 s — steady or rising.")
+
+    if rng is not None:
+        add("Choppiness", "pass" if rng <= 0.03 else "warn" if rng <= 0.08 else "fail",
+            f"Price moved {rng*100:.0f}¢ in the last 2 min." + (" Jumpy — stops can fill far below your level." if rng > 0.05 else ""), info=True)
+    return checks, steps
+
+
 def _verdict(
     seconds_left: float,
     age: timedelta,
@@ -123,6 +210,9 @@ def analyze(
     change = momentum(ticks, token)
     verdict, score, reasons = _verdict(seconds_left, now - quote.observed_at, bid, spread, depth, change, settings)
 
+    rng = price_range(ticks, token)
+    checks, next_steps = build_checks(seconds_left, now - quote.observed_at, bid, spread, depth, change, rng, settings)
+
     suggestion = None
     if ask is not None and ask > 0 and verdict in {"BUY", "WAIT"}:
         stop_off = settings.auto_stop_loss_offset
@@ -149,7 +239,9 @@ def analyze(
             "bid": _f(bid), "ask": _f(ask), "spread_cents": _f(spread * 100, 1) if spread is not None else None,
             "depth": _f(depth, 1), "change_60s_cents": round(change * 100, 1) if change is not None else None,
             "implied_probability": _f(bid, 3),
+            "range_2m_cents": round(rng * 100, 1) if rng is not None else None,
         },
+        "checks": checks, "next_steps": next_steps,
         "suggestion": suggestion,
     }
 

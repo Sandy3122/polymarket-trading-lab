@@ -165,3 +165,12 @@ def test_second_worker_lock_is_refused() -> None:
     first.release()
     second.acquire()
     second.release()
+
+
+def test_insight_checks_and_next_steps() -> None:
+    early = _insight(600, "0.90", "0.08")
+    names = {c["name"]: c["status"] for c in early["checks"]}
+    assert names["Timing"] == "warn" and names["Near-certain favourite"] == "fail"
+    assert any("entry window" in step for step in early["next_steps"])
+    assert any("+5¢" in step for step in early["next_steps"])
+    assert _insight(60, "0.97", "0.02")["next_steps"] == []
