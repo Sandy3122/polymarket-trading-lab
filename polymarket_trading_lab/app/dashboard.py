@@ -83,11 +83,74 @@ button.on{border-color:var(--blue);color:var(--blue)}
 .disc{font-size:11px;color:var(--mute);margin-top:8px}
 #tIns{font-size:12.5px;border-radius:8px;padding:8px 10px;margin-bottom:10px;background:var(--card2);border-left:4px solid var(--mute)}
 #tIns.BUY{border-left-color:var(--green)}#tIns.WAIT{border-left-color:var(--amber)}#tIns.AVOID{border-left-color:var(--red)}
+.mk.BUY{border-left:4px solid var(--green)}.mk.WAIT{border-left:4px solid var(--amber)}.mk.AVOID{border-left:4px solid var(--red)}
+.vchip{font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.4px}
+.vchip.BUY{background:var(--green);color:#06210f}.vchip.WAIT{background:var(--amber);color:#2b1c00}.vchip.AVOID{background:var(--red);color:#2b0803}
+.fchip{padding:4px 11px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:var(--card2);cursor:pointer}.fchip.on{border-color:var(--blue);color:var(--blue);font-weight:700}
+.ip{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px}@media(max-width:900px){.ip{grid-template-columns:1fr}}
+.ip h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin:14px 0 6px}
+.hd{display:flex;gap:14px;align-items:center}.hd .tx{flex:1}.hd .big2{font-size:17px;font-weight:700}
+.ck{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.ck .ic2{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff}
+.ck.pass .ic2{background:var(--green)}.ck.warn .ic2{background:var(--amber)}.ck.fail .ic2{background:var(--red)}.ck.info .ic2{background:var(--blue)}
+.ck b{display:block;font-size:13px}.ck span{color:var(--mute);font-size:12.5px}
+.mt{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}@media(max-width:600px){.mt{grid-template-columns:repeat(2,1fr)}}
+.mt div{background:var(--card2);border-radius:8px;padding:7px 9px}.mt small{font-size:11px;display:block}.mt b{font-size:15px;font-variant-numeric:tabular-nums}
+.sn{display:grid;grid-template-columns:130px 1fr 80px;gap:8px;align-items:center;font-size:12.5px;margin:5px 0}
+.sn i{display:block;height:10px;border-radius:5px}.sn .pos i{background:var(--green)}.sn .neg i{background:var(--red)}.sn b{text-align:right;font-variant-numeric:tabular-nums}
+.note{background:var(--card2);border-left:3px solid var(--blue);border-radius:6px;padding:8px 10px;font-size:12.5px;margin-top:8px}
+.steps{margin:4px 0;padding-left:18px;font-size:13px}.steps li{margin:3px 0}
 .empty{padding:22px;text-align:center;color:var(--mute)}
 .help{background:var(--card2);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--mute);margin-bottom:12px}
 #toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:9}
 .toast{padding:10px 14px;border-radius:10px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--green);box-shadow:0 6px 20px rgba(0,0,0,.3);max-width:360px}
 .toast.err{border-left-color:var(--red)}
+
+/* ---------- responsive ---------- */
+html{-webkit-text-size-adjust:100%}
+.wrap{padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right));padding-bottom:max(40px,env(safe-area-inset-bottom))}
+.main>*,.ip>*,.kpis>*{min-width:0}
+canvas{touch-action:pan-y}
+.tabs{overflow-x:auto;white-space:nowrap;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.mkts{scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}.mk{scroll-snap-align:start}
+.wrapRow{flex-wrap:wrap}
+@media(max-width:900px){
+  #chart{height:280px}
+  .top{align-items:flex-start}.chips{gap:6px}
+}
+@media(max-width:700px){
+  .wrap{padding:12px max(12px,env(safe-area-inset-left)) 32px max(12px,env(safe-area-inset-right))}
+  h1{font-size:17px}.logo{width:30px;height:30px}
+  .top{flex-direction:column;align-items:stretch;gap:10px}
+  .chips{justify-content:flex-start}.chips button{flex:1 1 auto;padding:8px 10px}
+  #clock{display:none}
+  .kpi .v{font-size:18px}.card{padding:12px}
+  .mk{min-width:170px}
+  #chart{height:240px}
+  .quotes{grid-template-columns:repeat(2,1fr)}
+  .row{flex-wrap:wrap}
+  .sn{grid-template-columns:100px 1fr 72px}
+  .hd .big2{font-size:15px}
+  .presets{grid-template-columns:1fr}
+  .flow>div{min-width:100%}
+  .legend{gap:8px}
+  #toasts{left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom))}.toast{max-width:none}
+  /* tables become stacked cards */
+  table.rt tr:first-child{display:none}
+  table.rt,table.rt tbody{display:block}
+  table.rt tr{display:block;border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:6px 10px;background:var(--card2)}
+  table.rt td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 0;white-space:normal;text-align:right}
+  table.rt td::before{content:attr(data-label);color:var(--mute);font-size:12px;text-align:left;flex:none}
+  table.rt td:empty::before,table.rt td[data-label=""]::before{content:none}
+  table.rt td .bar{min-width:120px}
+}
+@media(pointer:coarse){
+  button,.fchip,.seg button{min-height:40px}.mini{min-height:34px;padding:6px 11px}
+  input,select{font-size:16px;min-height:42px}
+  .big button{padding:15px}
+}
+@media(max-width:380px){.kpis{grid-template-columns:1fr}.quotes{grid-template-columns:1fr 1fr}}
+@media(min-width:1700px){.wrap{max-width:1600px}}
 </style></head><body><div class="wrap">
 
 <div class="top">
@@ -105,14 +168,10 @@ button.on{border-color:var(--blue);color:var(--blue)}
 
 <div class="kpis" id="kpis"></div>
 
-<div class="mute" style="margin:0 0 6px;font-size:12px"><span id="mktCount"></span> · <a href="#guide" style="color:var(--blue)">Want to see more markets? Open the Guide →</a></div>
+<div class="row" style="margin:0 0 8px;flex-wrap:wrap;gap:10px"><div class="chips" id="vfilter" style="flex:none"></div><span class="mute" style="font-size:12px;flex:1"><span id="mktCount"></span> · 👆 click a market for buy/wait insights · <a href="#guide" style="color:var(--blue)">More markets? Open the Guide →</a></span></div>
 <div class="mkts" id="mkts"></div>
 
-<div class="card" style="margin-bottom:12px">
-  <div class="head"><h2>💡 Market insights — when to buy</h2><small>updates every 3 s · <a href="#guide" style="color:var(--blue)">how this works</a></small></div>
-  <div class="ins" id="insights"><div class="empty">Start the worker to get insights.</div></div>
-  <div class="disc">Rule-based checks, not predictions. A price already is the crowd's probability, so a "BUY SETUP" means <b>the market fits the M1 pattern and the risk is spelled out</b> — not that it will win. Paper trading only. Not financial advice.</div>
-</div>
+<div class="card" id="insPanel" style="display:none;margin-bottom:12px"></div>
 
 <div class="main">
   <div class="card">
@@ -133,7 +192,7 @@ button.on{border-color:var(--blue);color:var(--blue)}
     <div id="tIns" style="display:none"></div>
     <div class="tok" id="tokSeg"><button data-t="YES" class="on">YES</button><button data-t="NO">NO</button></div>
     <label>Shares</label>
-    <div class="row"><input id="qty" type="number" min="1" step="1" value="10">
+    <div class="row wrapRow"><input id="qty" type="number" min="1" step="1" value="10">
       <span class="fit"><button class="mini" data-q="10">10</button> <button class="mini" data-q="25">25</button> <button class="mini" data-q="50">50</button> <button class="mini" data-q="100">100</button> <button class="mini" data-q="max">Max</button></span></div>
     <div class="est" id="estimate"></div>
     <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="autoProt" checked style="width:auto"> Attach stop loss / take profit after BUY (uses your Settings offsets)</label>
@@ -208,6 +267,10 @@ async function loadOverview(){
   else help.style.display='none';
 }
 
+
+function responsiveTable(sel){const t=document.querySelector(sel+' table');if(!t)return;t.classList.add('rt');
+  const heads=[...t.querySelectorAll('tr:first-child th')].map(h=>h.textContent.trim());
+  t.querySelectorAll('tr').forEach((r,i)=>{if(!i)return;[...r.children].forEach((td,j)=>td.setAttribute('data-label',heads[j]||''))})}
 function renderPositions(list){
   $('#posSum').textContent=list.length?`${list.length} open · ${signed(list.reduce((a,p)=>a+Number(p.unrealized_pnl),0))} unrealized`:'';
   if(!list.length){$('#positions').innerHTML='<div class="empty">No open positions yet. Use BUY in the ticket, or wait for the M1 strategy to get filled.</div>';return}
@@ -218,7 +281,7 @@ function renderPositions(list){
    return `<tr><td>${esc((p.question||'').slice(0,46))}</td><td><b class="${p.token==='YES'?'pos':'neg'}">${esc(p.token)}</b></td><td>${f(p.quantity,2)}</td><td>${f(e)}</td><td>${f(m)}</td><td>${money(p.market_value)}</td>
    <td class="${cls(p.unrealized_pnl)}">${signed(p.unrealized_pnl)}</td><td class="${cls(pc)}">${pc>=0?'+':''}${pc.toFixed(1)}%</td>
    <td><div class="mute" style="font-size:11px">${f(sl,2)} → ${f(tp,2)} ${p.exit_status&&p.exit_status!=='active'?`<span class="tag ${esc(p.exit_status)}">${esc(p.exit_status.replace('_',' '))}</span>`:''}</div><div class="bar"><i style="left:${at}%"></i></div></td>
-   <td><button class="mini" data-sel="${p.market_id}|${esc(p.token)}">Open</button> <button class="mini" data-close="${p.market_id}|${esc(p.token)}|${esc(p.quantity)}">Close</button></td></tr>`}).join('')+'</table>'}
+   <td><button class="mini" data-sel="${p.market_id}|${esc(p.token)}">Open</button> <button class="mini" data-close="${p.market_id}|${esc(p.token)}|${esc(p.quantity)}">Close</button></td></tr>`}).join('')+'</table>';responsiveTable('#positions')}
 $('#positions').addEventListener('click',async e=>{
   const sel=e.target.dataset.sel,cl=e.target.dataset.close;
   if(sel){const [m,t]=sel.split('|');S.market=m;setToken(t);await refresh()}
@@ -226,12 +289,12 @@ $('#positions').addEventListener('click',async e=>{
 
 function renderDecisions(list){const seen=[],rows=[];
   for(const d of list){const k=d.market_id+'|'+d.reason+'|'+d.intents;if(seen[seen.length-1]===k)continue;seen.push(k);rows.push(d)}
-  $('#tab-decisions').innerHTML='<table><tr><th>Time (UTC)</th><th>Market</th><th>Reason</th><th>Intent</th></tr>'+rows.slice(0,15).map(d=>`<tr><td>${esc(d.decision_time.slice(11,19))}</td><td>${esc(d.market_id)}</td><td>${esc(d.reason)}</td><td>${esc(sum(d.intents))}</td></tr>`).join('')+'</table>'}
+  $('#tab-decisions').innerHTML='<table><tr><th>Time (UTC)</th><th>Market</th><th>Reason</th><th>Intent</th></tr>'+rows.slice(0,15).map(d=>`<tr><td>${esc(d.decision_time.slice(11,19))}</td><td>${esc(d.market_id)}</td><td>${esc(d.reason)}</td><td>${esc(sum(d.intents))}</td></tr>`).join('')+'</table>';responsiveTable('#tab-decisions')}
 function sum(s){try{return JSON.parse(s).map(i=>`${i.side} ${i.token} ${i.quantity}@${i.price}`).join(', ')||'—'}catch(e){return s}}
-function renderReplays(list){$('#tab-replays').innerHTML=list.length?'<table><tr><th>Started</th><th>Name</th><th>Status</th><th>Events</th><th>Net P&amp;L</th></tr>'+list.map(d=>`<tr><td>${esc(d.started_at)}</td><td>${esc(d.name)}</td><td>${esc(d.status)}</td><td>${esc(d.event_count)}</td><td>${esc(d.net_pnl)}</td></tr>`).join('')+'</table>':'<div class="empty">No replay runs yet.</div>'}
+function renderReplays(list){$('#tab-replays').innerHTML=list.length?'<table><tr><th>Started</th><th>Name</th><th>Status</th><th>Events</th><th>Net P&amp;L</th></tr>'+list.map(d=>`<tr><td>${esc(d.started_at)}</td><td>${esc(d.name)}</td><td>${esc(d.status)}</td><td>${esc(d.event_count)}</td><td>${esc(d.net_pnl)}</td></tr>`).join('')+'</table>':'<div class="empty">No replay runs yet.</div>';responsiveTable('#tab-replays')}
 async function loadOrders(){
   const o=(await api('/orders?limit=80')).filter(o=>o.status!=='cancelled');
-  $('#tab-orders').innerHTML=o.length?'<table><tr><th>Time (UTC)</th><th>Market</th><th>Side</th><th>Token</th><th>Limit</th><th>Filled</th><th>Avg fill</th><th>Status</th></tr>'+o.slice(0,25).map(r=>`<tr><td>${esc((r.created_at||'').slice(11,19))}</td><td>${esc((r.question||'').slice(0,44))}</td><td><b class="${r.side==='BUY'?'pos':'neg'}">${esc(r.side)}</b></td><td>${esc(r.token)}</td><td>${f(r.price)}</td><td>${f(r.filled_quantity,2)}/${f(r.quantity,2)}</td><td>${f(r.average_fill_price)}</td><td>${esc(r.status)}${r.reject_reason?' — '+esc(r.reject_reason):''}</td></tr>`).join('')+'</table>':'<div class="empty">No orders yet.</div>'}
+  $('#tab-orders').innerHTML=o.length?'<table><tr><th>Time (UTC)</th><th>Market</th><th>Side</th><th>Token</th><th>Limit</th><th>Filled</th><th>Avg fill</th><th>Status</th></tr>'+o.slice(0,25).map(r=>`<tr><td>${esc((r.created_at||'').slice(11,19))}</td><td>${esc((r.question||'').slice(0,44))}</td><td><b class="${r.side==='BUY'?'pos':'neg'}">${esc(r.side)}</b></td><td>${esc(r.token)}</td><td>${f(r.price)}</td><td>${f(r.filled_quantity,2)}/${f(r.quantity,2)}</td><td>${f(r.average_fill_price)}</td><td>${esc(r.status)}${r.reject_reason?' — '+esc(r.reject_reason):''}</td></tr>`).join('')+'</table>':'<div class="empty">No orders yet.</div>';responsiveTable('#tab-orders')}
 $('#tabs').addEventListener('click',e=>{const t=e.target.dataset.tab;if(!t)return;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));if(t==='settings')loadSettings();for(const n of ['orders','decisions','replays','settings'])$('#tab-'+n).style.display=n===t?'':'none'});
 
 /* ---------- live markets ---------- */
@@ -243,12 +306,13 @@ async function loadLive(){
   $('#tFeed').textContent=fresh==null?'feed: none':`feed ${S.live.length} mkts · ${fresh.toFixed(0)}s ago`;$('#dFeed').className='dot '+(fresh==null?'':fresh<15?'ok':fresh<60?'warn':'bad')}
 function renderMarkets(){
   const held=new Set((S.portfolio?.positions||[]).map(p=>String(p.market_id)));
-  $('#mkts').innerHTML=S.live.length?S.live.map(m=>{const left=Math.floor((Date.parse(m.end_time)-Date.now())/1000);const win=left>0&&left<=120;
-   return `<div class="mk ${String(m.id)===String(S.market)?'sel':''}" data-m="${m.id}"><div class="t"><span>${esc(asset(m.question))}</span><span class="${win?'win':''}" data-end="${esc(m.end_time)}">${cd(left)}${win?' · M1 window':''}</span></div>
+  const list=S.live.filter(m=>vf==='ALL'||(insFor(m.id)||{}).verdict===vf);
+  $('#mkts').innerHTML=list.length?list.map(m=>{const left=Math.floor((Date.parse(m.end_time)-Date.now())/1000);const win=left>0&&left<=120;const v=(insFor(m.id)||{}).verdict||'';
+   return `<div class="mk ${String(m.id)===String(S.market)?'sel':''} ${v}" data-m="${m.id}"><div class="t"><span>${esc(asset(m.question))}</span>${v?`<span class="vchip ${v}">${v}</span>`:''}</div>
    <div class="row" style="justify-content:space-between"><div><b class="pos">${f(m.quote.yes_bid,2)}</b> <small>YES</small> ${held.has(String(m.id))?'<span class="held">● held</span>':''}</div>${sparkSvg(m.spark)}</div>
-   <div class="t"><span>NO ${f(m.quote.no_bid,2)}</span><span>spread ${m.quote.yes_ask&&m.quote.yes_bid?((m.quote.yes_ask-m.quote.yes_bid)*100).toFixed(0)+'¢':'—'}</span></div></div>`}).join(''):'<div class="card empty" style="width:100%">No live markets yet.</div>'}
+   <div class="t"><span>NO ${f(m.quote.no_bid,2)}</span><span class="${win?'win':''}" data-end="${esc(m.end_time)}">${cd(left)}${win?' · M1 window':''}</span></div></div>`}).join(''):`<div class="card empty" style="width:100%">${S.live.length?'No markets with this verdict right now.':'No live markets yet.'}</div>`}
 const cd=s=>s<=0?'ended':Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
-$('#mkts').addEventListener('click',e=>{const el=e.target.closest('.mk');if(!el)return;S.market=el.dataset.m;S.hover=null;renderMarkets();loadTicks()});
+$('#mkts').addEventListener('click',e=>{const el=e.target.closest('.mk');if(!el)return;const same=String(S.market)===el.dataset.m;S.market=el.dataset.m;S.hover=null;insOpen=same?!insOpen:true;renderMarkets();renderInsPanel();loadTicks()});
 setInterval(()=>{document.querySelectorAll('[data-end]').forEach(el=>{const left=Math.floor((Date.parse(el.dataset.end)-Date.now())/1000);el.textContent=cd(left)+(left>0&&left<=120?' · M1 window':'')});$('#clock').textContent=new Date().toISOString().slice(11,19)+' UTC'},1000);
 
 async function loadTicks(){
@@ -279,7 +343,7 @@ function draw(){
     c.strokeStyle=mute;c.lineWidth=1;c.beginPath();c.moveTo(X(b.t),T);c.lineTo(X(b.t),H-B);c.stroke();
     const txt=`${new Date(b.t).toISOString().slice(11,19)}  YES ${f(b.y,2)}  NO ${f(b.n,2)}`;const tw=c.measureText(txt).width+14,bx=Math.min(X(b.t)+8,W-R-tw);c.fillStyle=css('--card2');c.fillRect(bx,T+4,tw,20);c.strokeStyle=line;c.strokeRect(bx,T+4,tw,20);c.fillStyle=css('--ink');c.fillText(txt,bx+7,T+18)}
 }
-$('#chart').addEventListener('mousemove',e=>{S.hover=e.offsetX;draw()});$('#chart').addEventListener('mouseleave',()=>{S.hover=null;draw()});
+$('#chart').addEventListener('pointermove',e=>{S.hover=e.offsetX;draw()});$('#chart').addEventListener('pointerleave',()=>{S.hover=null;draw()});$('#chart').addEventListener('pointerup',e=>{if(e.pointerType==='touch'){S.hover=null;setTimeout(draw,1500)}});
 $('#rangeSeg').addEventListener('click',e=>{if(e.target.dataset.r==null)return;S.range=+e.target.dataset.r;document.querySelectorAll('#rangeSeg button').forEach(b=>b.classList.toggle('on',b===e.target));draw()});
 addEventListener('resize',()=>{draw();drawEq()});
 
@@ -335,22 +399,42 @@ $('#btnStart').onclick=()=>worker('start');$('#btnStop').onclick=()=>worker('sto
 
 
 /* ---------- insights ---------- */
-let INS=[];
+let INS=[],insOpen=false,vf='ALL';
 const verdictText={BUY:'BUY SETUP',WAIT:'WAIT',AVOID:'AVOID'};
+const insFor=id=>INS.find(x=>String(x.market_id)===String(id));
 async function loadInsights(){
   try{INS=(await api('/insights')).items}catch(e){return}
-  const el=$('#insights');
-  el.innerHTML=INS.length?INS.map(i=>{const m=i.metrics,g=i.suggestion,left=i.seconds_left;
-   return `<div class="ic ${i.verdict}"><div class="row" style="justify-content:space-between"><b>${esc(asset(i.question))}</b><span class="vd ${i.verdict}">${verdictText[i.verdict]}</span></div>
-   <div class="mute" style="font-size:12px">${esc(i.favourite)} favourite · bid ${f(m.bid,2)} / ask ${f(m.ask,2)} · spread ${m.spread_cents==null?'—':m.spread_cents+'¢'} · ${m.change_60s_cents==null?'':(m.change_60s_cents>=0?'+':'')+m.change_60s_cents+'¢/min · '}${cd(left)} left</div>
-   <div class="sc"><i style="width:${i.score}%"></i></div>
-   <ul>${i.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>
-   ${g?`<div class="sug"><b>If you buy:</b> ${g.shares} ${esc(g.token)} ≈ ${money(g.cost)} at ${f(g.entry,2)}${g.stop?` · stop ${f(g.stop,2)}`:''}<br>
-     Win up to <span class="pos">${money(g.max_gain)}</span> · lose <span class="neg">${money(g.max_loss_at_stop??g.max_loss_if_wrong)}</span> at the stop, <span class="neg">${money(g.max_loss_if_wrong)}</span> if it goes to zero.<br>
-     <span class="mute">You must be right <b>${(g.break_even_win_rate*100).toFixed(0)}%</b> of the time to break even holding to the end${g.needed_win_rate_with_stop?`, <b>${(g.needed_win_rate_with_stop*100).toFixed(0)}%</b> with the stop`:''}.</span></div>
-     <div class="row" style="margin-top:8px"><button class="mini" data-load="${i.market_id}|${esc(g.token)}|${g.shares}">Load into ticket</button></div>`:''}</div>`}).join(''):'<div class="empty">No live markets yet — start the worker.</div>';
-  showTicketInsight()}
-function showTicketInsight(){const i=INS.find(x=>String(x.market_id)===String(S.market)),el=$('#tIns');if(!i){el.style.display='none';return}
+  renderFilter();renderMarkets();if(insOpen)renderInsPanel();showTicketInsight()}
+function renderFilter(){const c={ALL:S.live.length,BUY:0,WAIT:0,AVOID:0};INS.forEach(i=>c[i.verdict]++);
+  $('#vfilter').innerHTML=['ALL','BUY','WAIT','AVOID'].map(k=>`<span class="fchip ${vf===k?'on':''}" data-vf="${k}">${k==='ALL'?'All':k==='BUY'?'🟢 Buy setups':k==='WAIT'?'🟡 Wait':'🔴 Avoid'} · ${c[k]}</span>`).join('')}
+$('#vfilter').addEventListener('click',e=>{const k=e.target.dataset.vf;if(!k)return;vf=k;renderFilter();renderMarkets()});
+function ring(score,col){const r=26,c=2*Math.PI*r;return `<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${r}" fill="none" stroke="var(--line)" stroke-width="6"/><circle cx="32" cy="32" r="${r}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${(c*score/100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 32 32)"/><text x="32" y="37" text-anchor="middle" font-size="16" font-weight="700" fill="var(--ink)">${score}</text></svg>`}
+function renderInsPanel(){
+  const el=$('#insPanel'),i=insFor(S.market);if(!insOpen||!i){el.style.display='none';return}el.style.display='';
+  const m=i.metrics,g=i.suggestion,col=i.verdict==='BUY'?'var(--green)':i.verdict==='WAIT'?'var(--amber)':'var(--red)';
+  const headline=i.verdict==='BUY'?'Conditions fit the M1 pattern. Review the plan and the risk below before buying.':i.verdict==='WAIT'?'Not yet. '+(i.next_steps[0]||i.reasons[0]||''):'Skip this one. '+(i.reasons[0]||'');
+  const icon={pass:'✓',warn:'!',fail:'✗'};
+  const checks=i.checks.map(c=>`<div class="ck ${c.info?'info':c.status}"><div class="ic2">${c.info?'i':icon[c.status]}</div><div><b>${esc(c.name)}</b><span>${esc(c.detail)}</span></div></div>`).join('');
+  const tiles=[['Favourite',i.favourite+' '+f(m.bid,2)],['Ask (you pay)',f(m.ask,2)],['Market says',m.implied_probability==null?'—':(m.implied_probability*100).toFixed(0)+'% likely'],['Spread',m.spread_cents==null?'—':m.spread_cents+'¢'],
+    ['Depth',m.depth==null?'—':Math.round(m.depth)+' sh'],['Momentum',m.change_60s_cents==null?'—':(m.change_60s_cents>=0?'+':'')+m.change_60s_cents+'¢/min'],['2-min range',m.range_2m_cents==null?'—':m.range_2m_cents+'¢'],['Time left',cd(i.seconds_left)]]
+    .map(t=>`<div><small>${t[0]}</small><b>${esc(t[1])}</b></div>`).join('');
+  let plan='<p class="mute">No trade plan: this market can\'t be entered right now.</p>';
+  if(g){const rows=[['Right ('+g.token+' wins)',g.max_gain,'pos'],...(g.max_loss_at_stop!=null?[['Stop hit',-g.max_loss_at_stop,'neg']]:[]),['Wrong, no stop',-g.max_loss_if_wrong,'neg']];const mx=Math.max(...rows.map(r=>Math.abs(r[1])))||1;
+    const implied=m.implied_probability!=null?(m.implied_probability*100).toFixed(0):null;
+    plan=`<div class="mute" style="font-size:12.5px">Buy <b>${g.shares} ${esc(g.token)}</b> ≈ <b>${money(g.cost)}</b> at ${f(g.entry,2)}${g.stop?` · stop ${f(g.stop,2)}`:''}${g.target?` · target ${f(g.target,2)}`:''}</div>`+
+      rows.map(r=>`<div class="sn ${r[2]}"><span>${esc(r[0])}</span><div><i style="width:${Math.max(3,Math.abs(r[1])/mx*100).toFixed(0)}%"></i></div><b class="${r[2]}">${signed(r[1])}</b></div>`).join('')+
+      `<div class="note">You must be right <b>${(g.break_even_win_rate*100).toFixed(0)}%</b> of the time to break even holding to the end${g.needed_win_rate_with_stop?` (<b>${(g.needed_win_rate_with_stop*100).toFixed(0)}%</b> with the stop)`:''}. ${implied?`The market already prices this at ~${implied}%, so you only profit if the real chance is higher — the app can't know that.`:''}</div>`}
+  el.innerHTML=`<div class="head"><h2>💡 ${esc(i.question)}</h2><div class="row fit"><button class="mini" id="insChart">View chart ↓</button><button class="mini" id="insClose">✕ Close</button></div></div>
+  <div class="ip"><div>
+    <div class="hd">${ring(i.score,col)}<div class="tx"><span class="vd ${i.verdict}">${verdictText[i.verdict]}</span><div class="big2" style="margin-top:6px">${esc(headline)}</div></div></div>
+    <h3>Checklist</h3>${checks}</div>
+   <div><h3 style="margin-top:0">Live numbers</h3><div class="mt">${tiles}</div>
+    <h3>If you buy now</h3>${plan}
+    ${i.next_steps.length?`<h3>What would turn this into a buy</h3><ul class="steps">${i.next_steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+    <div class="row" style="margin-top:12px">${g?`<button class="buy" style="border:0;padding:10px;color:#06210f;font-weight:800" data-load="${i.market_id}|${esc(g.token)}|${g.shares}">Load ${g.shares} ${esc(g.token)} into ticket</button>`:''}</div></div></div>
+  <div class="disc">Rule-based checks, not predictions. A "BUY SETUP" means the market fits the M1 pattern and the risk is spelled out — not that it will win. Paper trading only. Not financial advice.</div>`;
+  $('#insClose').onclick=()=>{insOpen=false;renderInsPanel()};$('#insChart').onclick=()=>$('#chart').scrollIntoView({behavior:'smooth',block:'center'})}
+function showTicketInsight(){const i=insFor(S.market),el=$('#tIns');if(!i){el.style.display='none';return}
   el.style.display='';el.className=i.verdict;el.innerHTML=`<b>${verdictText[i.verdict]}</b> — ${esc(i.reasons[0]||'')}`}
 document.addEventListener('click',async e=>{const d=e.target.dataset.load;if(!d)return;const [m,t,q]=d.split('|');S.market=m;setToken(t);$('#qty').value=q;await loadTicks();renderMarkets();$('#tokSeg').scrollIntoView({behavior:'smooth',block:'center'});toast(`Loaded ${q} ${t} — review, then press BUY`)});
 setInterval(loadInsights,3000);
