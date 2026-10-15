@@ -141,3 +141,27 @@ def test_insight_weakening_momentum_waits() -> None:
     cur = Quote(now, Decimal("0.96"), Decimal("200"), Decimal("0.03"), Decimal("200"))
     result = _insight(60, "0.96", "0.03", ticks=[old, cur])
     assert result["verdict"] == "WAIT" and "weakening" in " ".join(result["reasons"])
+
+
+def test_empty_keywords_accept_every_topic() -> None:
+    from app.config import Settings
+    from app.market_data import MarketSnapshot
+    from app.worker import PaperMarketWorker
+
+    now = datetime.now(timezone.utc)
+    snap = MarketSnapshot("x", "Will it rain in Paris?", now + timedelta(minutes=10), now, start_time=now - timedelta(minutes=5))
+    worker = PaperMarketWorker(settings=Settings(market_keywords=""))
+    assert worker._exclusion_reason(snap) is None
+    assert PaperMarketWorker(settings=Settings(market_keywords="btc"))._exclusion_reason(snap) == "not_crypto"
+
+
+def test_second_worker_lock_is_refused() -> None:
+    from app.worker_lock import WorkerAlreadyRunning, WorkerLock
+
+    first, second = WorkerLock("sqlite:///lock-test"), WorkerLock("sqlite:///lock-test")
+    first.acquire()
+    with pytest.raises(WorkerAlreadyRunning, match="already running"):
+        second.acquire()
+    first.release()
+    second.acquire()
+    second.release()

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .models import SystemHealth
 from .config import get_settings
 from .worker import PaperMarketWorker
+from .worker_lock import WorkerLock
 
 
 class WorkerController:
@@ -61,6 +62,10 @@ class WorkerController:
         if state == "running":
             with session_factory() as session:
                 return self.status(session)
+        if worker is None:
+            probe = WorkerLock(get_settings().database_url)
+            probe.acquire()  # raises WorkerAlreadyRunning if another process owns the worker
+            probe.release()
         self._worker = worker or PaperMarketWorker(session_factory=session_factory)
         with session_factory() as health_session:
             self._write_health(health_session, "running", "paper worker started by local API")

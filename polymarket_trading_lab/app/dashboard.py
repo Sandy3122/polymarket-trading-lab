@@ -203,7 +203,8 @@ async function loadOverview(){
   renderPositions(p.positions);renderDecisions(x.decisions);renderReplays(x.replays);drawEq();
   const help=$('#help');
   if(w.status!=='running'){help.style.display='block';help.innerHTML='<b>Worker is stopped.</b> Press <b>▶ Start worker</b> to stream live prices. Nothing trades or updates until it runs.'}
-  else if(!S.live.length){help.style.display='block';help.innerHTML='<b>Waiting for live markets…</b> The worker is running; prices appear within a few seconds. If this stays empty, see the <a href="#guide" style="color:var(--blue)">Guide</a>.'}
+  else if(!S.live.length){const fd=parseFeed((x.health.find(h=>h.component==='market_data')||{}).details);help.style.display='block';
+    help.innerHTML=fd&&fd.kept===0?`<b>The worker is running, but 0 markets passed your filters.</b> Polymarket returned ${fd.found}; removed: ${esc(fd.excl.replace('duration_outside_window','wrong length').replace('not_crypto','no keyword match'))}. Open the <a href="#guide" style="color:var(--blue)">Guide</a> to widen the filters.`:'<b>Waiting for live markets…</b> The worker is running; prices appear within a few seconds. If this stays empty, see the <a href="#guide" style="color:var(--blue)">Guide</a>.'}
   else help.style.display='none';
 }
 
@@ -438,7 +439,7 @@ async function renderGuide(){
    <ul><li><b>Max market length</b> — the biggest one. Raise it (e.g. 1440 = 1 day, 10080 = 1 week) to see markets that end later. It controls <i>both</i> Gate 1 and Gate 2.</li>
    <li><b>Min market length</b> — skips very short markets. Keep it low if you want everything.</li>
    <li><b>Filter on/off</b> — OFF means "ignore keywords and length, take every market Polymarket gives me".</li>
-   <li><b>Keywords</b> — only used when the filter is ON. Add words like <i>trump, election, fed, nba</i> to track those topics.</li>
+   <li><b>Keywords</b> — only used when the filter is ON. Add words like <i>trump, election, fed, nba</i> to track those topics. <b>Leave it empty to accept every topic</b> (the length rule still applies).</li>
    <li><b>Max markets streamed</b> — a hard cap on how many cards get live prices (1–100). If you find 60 markets but this is 25, you only get 25.</li>
    <li><b>Markets per page × pages</b> — how many markets the worker reads from Polymarket (100 × 5 = 500). Raise "pages" if you turn the filter off and want more than 500 considered.</li></ul>
    <p class="mute">⚠ More markets = more work for your computer. Above ~50 streamed markets the dashboard may feel slower, because every price update is saved to the database.</p></div>

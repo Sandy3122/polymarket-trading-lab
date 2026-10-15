@@ -38,6 +38,7 @@ from .risk import RiskChecker, RiskLimits
 from .runner import StrategyRunner
 from .strategy import CurrentBook, M1Config, M1Strategy
 from .trading import apply_auto_exit, evaluate_exits
+from .worker_lock import WorkerAlreadyRunning, WorkerLock  # noqa: F401
 
 log = logging.getLogger(__name__)
 
@@ -183,7 +184,7 @@ class PaperMarketWorker:
         text = f"{snapshot.question} {snapshot.slug or ''} {snapshot.category or ''}".lower()
         tokens = set(re.split(r"[^a-z0-9]+", text))
         keywords = {k.strip().lower() for k in self.settings.market_keywords.split(",") if k.strip()}
-        if not tokens & keywords:
+        if keywords and not tokens & keywords:
             return "not_crypto"
         return None
 
@@ -404,6 +405,15 @@ class PaperMarketWorker:
         return total
 
     async def run_forever(self) -> None:
+        # Two workers on one database double-fill orders and corrupt balances.
+        lock = WorkerLock(self.settings.database_url)
+        lock.acquire()
+        try:
+            await self._run_forever()
+        finally:
+            lock.release()
+
+    async def _run_forever(self) -> None:
         init_db()
         from .runtime_settings import load_overrides
 

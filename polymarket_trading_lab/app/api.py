@@ -33,6 +33,7 @@ from .runtime_settings import apply_changes, describe, load_overrides, reset_all
 from .strategy import CurrentBook, M1Strategy
 from .trading import TradeError, clear_exit, market_trade, portfolio_view, set_exit
 from .worker_control import worker_controller
+from .worker_lock import WorkerAlreadyRunning
 
 
 app = FastAPI(title="Polymarket Trading Lab", version="0.1.0")
@@ -373,7 +374,10 @@ def worker_status(session: Session = Depends(get_session)) -> dict[str, object]:
 @app.post("/ops/worker/start")
 async def start_worker() -> dict[str, object]:
     # The controller starts only PaperMarketWorker; live execution remains unavailable.
-    return await worker_controller.start(SessionLocal)
+    try:
+        return await worker_controller.start(SessionLocal)
+    except WorkerAlreadyRunning as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @app.post("/ops/worker/stop")

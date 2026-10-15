@@ -30,7 +30,7 @@ EDITABLE: dict[str, tuple[str, str, str, str]] = {
     "max_market_data_age_seconds": ("M1 strategy", "Max quote age (s)", "Ignore books older than this.", "instant"),
     "paper_queue_model": ("M1 strategy", "Queue model", "optimistic / baseline / conservative fill assumptions.", "new orders"),
     "worker_require_crypto": ("Market selection", "Filter by keywords & duration", "Off = trade every market Polymarket returns.", "next refresh"),
-    "market_keywords": ("Market selection", "Keywords (comma separated)", "A market is tracked if its title/slug contains one of these words.", "next refresh"),
+    "market_keywords": ("Market selection", "Keywords (comma separated)", "Track a market if its title contains one of these words. Leave EMPTY to accept every topic.", "next refresh"),
     "min_market_duration_minutes": ("Market selection", "Min market length (min)", "Skip shorter markets.", "next refresh"),
     "max_market_duration_minutes": ("Market selection", "Max market length (min)", "Skip longer markets.", "next refresh"),
     "worker_stream_market_limit": ("Market selection", "Max markets streamed", "How many markets get live prices at once (1–100).", "worker restart"),
