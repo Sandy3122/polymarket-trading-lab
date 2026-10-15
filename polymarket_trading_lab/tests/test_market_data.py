@@ -67,7 +67,9 @@ def test_rest_source_normalizes_market_and_best_books() -> None:
     assert book.yes_bid_size == Decimal("3.5")
     assert book.no_bid is None
     assert book.no_bid_size == Decimal("0")
-    assert book.observed_at.isoformat() == "2030-01-01T00:00:00+00:00"
+    # Freshness is the fetch time, not the CLOB last-change timestamp (2030 in the fixture).
+    assert book.observed_at == events[1].occurred_at
+    assert book.observed_at.year != 2030
     assert transport.calls[1][0:2] == ("POST", "https://clob.polymarket.com/books")
     assert transport.calls[1][2] == [{"token_id": "yes-asset"}, {"token_id": "no-asset"}]
 

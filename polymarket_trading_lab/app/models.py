@@ -113,6 +113,22 @@ class Position(Base):
     market: Mapped[Market] = relationship(back_populates="positions")
 
 
+class PositionExit(Base):
+    """Stop-loss / take-profit levels (token bid prices) guarding one position."""
+
+    __tablename__ = "position_exits"
+    __table_args__ = (UniqueConstraint("market_id", "token", name="uq_position_exit_market_token"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market_id: Mapped[int] = mapped_column(ForeignKey("markets.id"), index=True)
+    token: Mapped[str] = mapped_column(String(10))
+    stop_loss_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    take_profit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active | stop_loss | take_profit
+    triggered_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
+
+
 class LedgerEntry(Base):
     """A small double-entry-ish journal.
 

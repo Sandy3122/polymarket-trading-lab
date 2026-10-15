@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -174,11 +175,22 @@ def _http_json(method: str, url: str, body: object | None = None) -> object:
         encoded = json.dumps(body).encode("utf-8")
         headers["content-type"] = "application/json"
     request = Request(url, data=encoded, headers=headers, method=method)
-    try:
-        with urlopen(request, timeout=10) as response:  # noqa: S310 - URL is configured by the caller.
-            return json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        raise MarketDataError(f"market-data request failed for {url}: {exc}") from exc
+    last_error: Exception | None = None
+    for attempt in range(4):
+        try:
+            with urlopen(request, timeout=10) as response:  # noqa: S310 - URL is configured by the caller.
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            # Retry provider throttling and transient server failures, but fail
+            # immediately on malformed requests/auth errors.
+            last_error = exc
+            if exc.code not in {408, 425, 429, 500, 502, 503, 504}:
+                break
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            last_error = exc
+        if attempt < 3:
+            time.sleep(0.5 * (2**attempt))
+    raise MarketDataError(f"market-data request failed for {url}: {last_error}") from last_error
 
 
 def _json_list(value: object, field: str) -> list[object]:
@@ -294,7 +306,7 @@ class PolymarketRestMarketDataSource:
                 yes_token_id=yes_asset, no_token_id=no_asset,
                 condition_id=str(raw.get("conditionId")) if raw.get("conditionId") is not None else None,
                 slug=str(raw.get("slug")) if raw.get("slug") is not None else None,
-                start_time=_timestamp(raw["startDate"], "startDate") if raw.get("startDate") else None,
+                start_time=_market_start(raw),
                 category=str(raw["category"]) if raw.get("category") is not None else None,
             ),
         )
@@ -324,9 +336,12 @@ class PolymarketRestMarketDataSource:
 
         yes_bid, yes_size = _best_bid(by_asset[yes_asset], yes_asset)
         no_bid, no_size = _best_bid(by_asset[no_asset], no_asset)
-        observed_at = _timestamp(by_asset[yes_asset].get("timestamp"), "CLOB timestamp")
-        no_observed_at = _timestamp(by_asset[no_asset].get("timestamp"), "CLOB timestamp")
-        observed_at = min(observed_at, no_observed_at)
+        # The CLOB "timestamp" is when the book last *changed*; a quiet book can
+        # be minutes old yet still be exactly what the exchange shows now. Validate
+        # it, but measure freshness by when this snapshot was actually fetched.
+        _timestamp(by_asset[yes_asset].get("timestamp"), "CLOB timestamp")
+        _timestamp(by_asset[no_asset].get("timestamp"), "CLOB timestamp")
+        observed_at = received_at
         yield MarketEvent(
             "book",
             received_at,
@@ -379,8 +394,10 @@ def _gamma_market(raw: Mapping[str, Any], observed_at: datetime | None = None) -
     if end_time is None:
         raise MarketDataError("Gamma market has no usable endDate")
     outcomes = [str(item).strip().lower() for item in _json_list(raw.get("outcomes"), "outcomes")]
+    # Up/Down markets are binary too: Up takes the affirmative (YES) slot.
+    outcomes = [_OUTCOME_ALIASES.get(item, item) for item in outcomes]
     if len(outcomes) != 2 or set(outcomes) != {"yes", "no"}:
-        raise MarketDataError("only binary YES/NO markets are supported")
+        raise MarketDataError("only binary YES/NO or Up/Down markets are supported")
 
     token_values = raw.get("clobTokenIds")
     if token_values is None:
@@ -400,9 +417,26 @@ def _gamma_market(raw: Mapping[str, Any], observed_at: datetime | None = None) -
         no_token_id=by_outcome["no"],
         condition_id=str(raw["conditionId"]) if raw.get("conditionId") is not None else None,
         slug=str(raw["slug"]) if raw.get("slug") is not None else None,
-        start_time=_timestamp(raw["startDate"], "startDate") if raw.get("startDate") else None,
+        start_time=_market_start(raw),
         category=str(raw["category"]) if raw.get("category") is not None else None,
     )
+
+
+_OUTCOME_ALIASES = {"up": "yes", "down": "no"}
+
+
+def _market_start(raw: Mapping[str, Any]) -> datetime | None:
+    """Start of the trading window.
+
+    ``eventStartTime`` is when the window opens; ``startDate`` is when the
+    market was created (often ~24h earlier for short up/down markets), so it is
+    only a fallback.
+    """
+    if raw.get("eventStartTime"):
+        return _timestamp(raw["eventStartTime"], "eventStartTime")
+    if raw.get("startDate"):
+        return _timestamp(raw["startDate"], "startDate")
+    return None
 
 
 def _gamma_status(raw: Mapping[str, Any]) -> str:
@@ -515,13 +549,15 @@ class PolymarketPublicClient:
                     raise MarketDataError(f"CLOB book for {token} belongs to another market")
         yes_bid, yes_size = _best_bid(books[market.yes_token_id], market.yes_token_id)
         no_bid, no_size = _best_bid(books[market.no_token_id], market.no_token_id)
-        yes_time = _timestamp(books[market.yes_token_id].get("timestamp"), "YES book timestamp")
-        no_time = _timestamp(books[market.no_token_id].get("timestamp"), "NO book timestamp")
+        # The CLOB "timestamp" is the last book *change*; validate it, but measure
+        # freshness by fetch time so a quiet-but-current book isn't called stale.
+        _timestamp(books[market.yes_token_id].get("timestamp"), "YES book timestamp")
+        _timestamp(books[market.no_token_id].get("timestamp"), "NO book timestamp")
         occurred = datetime.now(timezone.utc)
         return MarketEvent(
             "book",
             occurred,
-            BookSnapshot(market.market_id, min(yes_time, no_time), yes_bid, yes_size, no_bid, no_size),
+            BookSnapshot(market.market_id, occurred, yes_bid, yes_size, no_bid, no_size),
         )
 
     def market_events(self, market: MarketSnapshot) -> Iterator[MarketEvent]:
@@ -652,7 +688,7 @@ class PolymarketMarketStream:
             if market.condition_id:
                 lookup[market.condition_id] = market
         books: dict[str, dict[str, tuple[Decimal | None, Decimal]]] = {}
-        async with self.connect(self.ws_url, ping_interval=None) as websocket:
+        async with self.connect(self.ws_url, ping_interval=None, max_queue=2048) as websocket:
             await websocket.send(json.dumps(self.subscription()))
 
             async def heartbeat() -> None:

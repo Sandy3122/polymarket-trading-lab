@@ -24,6 +24,8 @@ class WorkerController:
         if self._task is None:
             return "stopped"
         if self._task.done():
+            if self._task.cancelled():
+                return "stopped"
             return "error" if self._task.exception() else "stopped"
         return "running"
 

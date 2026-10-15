@@ -209,3 +209,52 @@ def test_market_stream_sends_subscription_and_heartbeat_response() -> None:
     assert events[0].event_type == "book"
     assert '"type": "market"' in websocket.sent[0]
     assert "PONG" in websocket.sent
+
+
+def test_event_start_time_is_preferred_over_market_creation_date() -> None:
+    """Short up/down markets are created ~24h early; startDate is not the trading window."""
+    raw = gamma_market(
+        slug="btc-updown-15m-1",
+        startDate="2029-12-31T00:05:00Z",
+        eventStartTime="2029-12-31T23:45:00Z",
+        endDateIso=None,
+        endDate="2030-01-01T00:00:00Z",
+    )
+    client = PolymarketPublicClient(transport=lambda m, u, b: [raw])
+    (market,) = client.list_markets(limit=10)
+    assert market.start_time == datetime(2029, 12, 31, 23, 45, tzinfo=timezone.utc)
+    assert (market.end_time - market.start_time).total_seconds() == 15 * 60
+
+
+def test_start_date_is_fallback_when_event_start_time_missing() -> None:
+    raw = gamma_market(startDate="2029-12-31T00:00:00Z")
+    client = PolymarketPublicClient(transport=lambda m, u, b: [raw])
+    (market,) = client.list_markets(limit=10)
+    assert market.start_time == datetime(2029, 12, 31, tzinfo=timezone.utc)
+
+
+def test_up_down_markets_map_to_yes_no_slots() -> None:
+    raw = gamma_market(outcomes='["Up", "Down"]', clobTokenIds='["up-asset", "down-asset"]')
+    client = PolymarketPublicClient(transport=lambda m, u, b: [raw])
+    (market,) = client.list_markets(limit=10)
+    assert market.yes_token_id == "up-asset"
+    assert market.no_token_id == "down-asset"
+
+
+def test_quiet_book_is_fresh_when_just_fetched() -> None:
+    """CLOB timestamp is last-change time; a just-fetched quiet book must not look stale."""
+    def transport(method: str, url: str, body: object | None) -> object:
+        return {
+            "market": "condition-1",
+            "asset_id": "x",
+            "timestamp": "1893456000000",  # years in the future vs. "last change" semantics: only validated
+            "bids": [{"price": "0.96", "size": "2"}],
+            "asks": [],
+        }
+
+    market = MarketSnapshot(
+        "market-1", "Q", datetime(2030, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
+        yes_token_id="yes-asset", no_token_id="no-asset", condition_id="condition-1",
+    )
+    event = PolymarketPublicClient(transport=transport).book_event(market)
+    assert event.payload.observed_at == event.occurred_at

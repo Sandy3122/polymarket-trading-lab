@@ -20,13 +20,16 @@ from .accounts import (
     ReadOnlyAccountSource,
     persist_account_observation,
 )
+from .dashboard import DASHBOARD_HTML
 from .database import SessionLocal, get_session, init_db
+from .live import live_quotes
 from .models import AccountActivityRecord, AccountReconciliationRecord, AccountSnapshotRecord, Market, PaperOrder, Position, ReplayDecision, ReplayRun, StrategyDecision, SystemHealth
 from .paper import PaperTrading
 from .replay import ReplayService
 from .risk import RiskChecker, RiskLimits
 from .runner import StrategyRunner
 from .strategy import CurrentBook, M1Strategy
+from .trading import TradeError, clear_exit, market_trade, portfolio_view, set_exit
 from .worker_control import worker_controller
 
 
@@ -46,6 +49,20 @@ class OrderCreate(BaseModel):
     price: Decimal = Field(gt=0, le=1)
     quantity: Decimal = Field(gt=0)
     auto_fill: bool = False
+
+
+class TradeCreate(BaseModel):
+    market_id: int
+    token: str = Field(pattern="^(?i:yes|no)$")
+    side: str = Field(pattern="^(?i:buy|sell)$")
+    quantity: Decimal = Field(gt=0)
+
+
+class ExitSet(BaseModel):
+    market_id: int
+    token: str = Field(pattern="^(?i:yes|no)$")
+    stop_loss_price: Decimal | None = None
+    take_profit_price: Decimal | None = None
 
 
 class BookEvaluate(BaseModel):
@@ -126,14 +143,7 @@ def health(session: Session = Depends(get_session)) -> dict[str, object]:
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard() -> str:
-    return """<!doctype html><html><head><meta charset="utf-8"><title>Polymarket Trading Lab</title>
-    <style>body{font:15px system-ui;max-width:1200px;margin:32px auto;padding:0 20px;background:#fafafa;color:#17202a}header{display:flex;justify-content:space-between;align-items:center;gap:16px}.badge{background:#dff7e8;color:#176b38;padding:6px 10px;border-radius:999px;font-weight:700}button{padding:8px 12px;border:1px solid #ccd4dc;border-radius:6px;background:white;cursor:pointer}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:20px 0}.card{background:white;border:1px solid #e0e5ea;border-radius:10px;padding:16px}.value{font-size:24px;font-weight:700;margin-top:6px}table{width:100%;border-collapse:collapse}td,th{text-align:left;border-bottom:1px solid #edf0f2;padding:8px 4px;font-size:13px}section{margin-top:20px}small{color:#64707d}.danger{background:#fff2f0;color:#9d251b}</style></head>
-    <body><header><div><h1>Polymarket Trading Lab</h1><small>Local paper operations console</small></div><div><span class="badge">PAPER ONLY · LIVE DISABLED</span> <button onclick="load()">Refresh</button></div></header>
-    <section class="grid" id="cards"><div class="card">Loading…</div></section>
-    <section class="card"><h2>Worker</h2><p id="worker">Loading…</p><button onclick="workerAction('start')">Start paper worker</button> <button class="danger" onclick="workerAction('stop')">Stop paper worker</button></section>
-    <section class="card"><h2>Recent strategy decisions</h2><div id="decisions">Loading…</div></section>
-    <section class="card"><h2>Recent replay runs</h2><div id="replays">Loading…</div></section>
-    <script>const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function load(){let r=await fetch('/ops/overview');let x=await r.json();let p=x.portfolio;document.querySelector('#cards').innerHTML=[['Cash',p.cash],['Realized P&L',p.realized_pnl],['Open orders',x.stats.open_orders],['Markets',x.stats.markets],['Replay runs',x.stats.replay_runs]].map(a=>`<div class="card"><small>${a[0]}</small><div class="value">${esc(a[1])}</div></div>`).join('');let w=x.worker;document.querySelector('#worker').innerHTML=`<strong>${esc(w.status)}</strong> · ${esc(w.details)}<br><small>last check: ${esc(w.checked_at||'never')} · real execution: ${esc(w.real_execution)}</small>`;document.querySelector('#decisions').innerHTML='<table><tr><th>Time</th><th>Market</th><th>Reason</th><th>Intents</th></tr>'+x.decisions.map(d=>`<tr><td>${esc(d.decision_time)}</td><td>${esc(d.market_id)}</td><td>${esc(d.reason)}</td><td>${esc(d.intents)}</td></tr>`).join('')+'</table>';document.querySelector('#replays').innerHTML='<table><tr><th>Started</th><th>Name</th><th>Status</th><th>Events</th><th>Net P&L</th></tr>'+x.replays.map(d=>`<tr><td>${esc(d.started_at)}</td><td>${esc(d.name)}</td><td>${esc(d.status)}</td><td>${esc(d.event_count)}</td><td>${esc(d.net_pnl)}</td></tr>`).join('')+'</table>'}async function workerAction(action){await fetch('/ops/worker/'+action,{method:'POST'});await load()}load();</script></body></html>"""
+    return DASHBOARD_HTML
 
 
 @app.get("/markets")
@@ -155,14 +165,16 @@ def create_market(payload: MarketCreate, session: Session = Depends(get_session)
 
 
 @app.get("/orders")
-def orders(session: Session = Depends(get_session)) -> list[dict[str, object]]:
+def orders(limit: int = 200, session: Session = Depends(get_session)) -> list[dict[str, object]]:
     return [
         {"id": o.id, "client_order_id": o.client_order_id, "market_id": o.market_id, "token": o.token,
          "side": o.side, "price": str(o.price), "quantity": str(o.quantity), "filled_quantity": str(o.filled_quantity),
          "status": o.status, "reject_reason": o.reject_reason, "simulation_model": o.simulation_model,
+         "market_id": o.market_id, "average_fill_price": str(o.average_fill_price) if o.average_fill_price is not None else None,
+         "created_at": _iso(o.created_at), "question": o.market.question,
          "queue_ahead_initial": str(o.queue_ahead_initial), "queue_ahead_remaining": str(o.queue_ahead_remaining),
          "queue_consumed": str(o.queue_consumed)}
-        for o in session.scalars(select(PaperOrder).order_by(desc(PaperOrder.created_at)))
+        for o in session.scalars(select(PaperOrder).order_by(desc(PaperOrder.created_at)).limit(max(1, min(limit, 1000))))
     ]
 
 
@@ -182,11 +194,98 @@ def create_paper_order(payload: OrderCreate, session: Session = Depends(get_sess
 
 @app.get("/portfolio")
 def portfolio(session: Session = Depends(get_session)) -> dict[str, object]:
-    broker = _paper_broker(session)
-    positions = session.scalars(select(Position).order_by(Position.market_id, Position.token))
-    return {"mode": "paper", "cash": str(broker.cash_balance()), "realized_pnl": str(broker.realized_pnl()),
-             "positions": [{"market_id": p.market_id, "token": p.token, "quantity": str(p.quantity),
-                             "average_entry_price": str(p.average_entry_price), "realized_pnl": str(p.realized_pnl)} for p in positions]}
+    return {"mode": "paper", **portfolio_view(session, _paper_broker(session))}
+
+
+@app.get("/live/markets")
+def live_markets(session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    """Markets with a live quote, soonest-ending first."""
+
+    now = datetime.now(timezone.utc)
+    rows = []
+    for key in live_quotes.keys():
+        market = session.scalar(select(Market).where(Market.market_key == key))
+        quote = live_quotes.latest(key)
+        if market is None or quote is None:
+            continue
+        rows.append({
+            "id": market.id, "question": market.question, "status": market.status,
+            "end_time": _iso(market.end_time),
+            "seconds_left": int((market.end_time - now).total_seconds()),
+            "quote": _quote_json(quote),
+        })
+    return sorted(rows, key=lambda row: row["end_time"] or "")
+
+
+def _quote_json(quote: Any) -> dict[str, object]:
+    def text(value: Decimal | None) -> str | None:
+        return None if value is None else str(value)
+
+    return {
+        "observed_at": _iso(quote.observed_at),
+        "yes_bid": text(quote.yes_bid), "yes_ask": text(quote.yes_ask), "yes_bid_size": str(quote.yes_bid_size),
+        "no_bid": text(quote.no_bid), "no_ask": text(quote.no_ask), "no_bid_size": str(quote.no_bid_size),
+    }
+
+
+@app.get("/live/markets/{market_id}/ticks")
+def live_ticks(market_id: int, session: Session = Depends(get_session)) -> dict[str, object]:
+    market = session.get(Market, market_id)
+    if market is None:
+        raise HTTPException(404, "market not found")
+    quote = live_quotes.latest(market.market_key)
+    return {
+        "market_id": market.id, "question": market.question, "end_time": _iso(market.end_time),
+        "quote": _quote_json(quote) if quote else None,
+        "ticks": [
+            {"t": _iso(tick.observed_at), "yes": str(tick.yes_bid) if tick.yes_bid is not None else None,
+             "no": str(tick.no_bid) if tick.no_bid is not None else None}
+            for tick in live_quotes.ticks(market.market_key)
+        ],
+    }
+
+
+@app.post("/paper/trade", status_code=201)
+def paper_trade(payload: TradeCreate, session: Session = Depends(get_session)) -> dict[str, object]:
+    """Instant paper BUY (at ask) or SELL (at bid) against the live quote."""
+
+    market = session.get(Market, payload.market_id)
+    if market is None:
+        raise HTTPException(404, "market not found")
+    try:
+        order = market_trade(session, _paper_broker(session), market, payload.token, payload.side, payload.quantity)
+    except (TradeError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    session.commit()
+    return {"id": order.id, "status": order.status, "side": order.side, "token": order.token,
+            "quantity": str(order.filled_quantity), "price": str(order.average_fill_price)}
+
+
+@app.put("/paper/exits")
+def put_exit(payload: ExitSet, session: Session = Depends(get_session)) -> dict[str, object]:
+    market = session.get(Market, payload.market_id)
+    if market is None:
+        raise HTTPException(404, "market not found")
+    try:
+        row = set_exit(session, market, payload.token, payload.stop_loss_price, payload.take_profit_price)
+    except TradeError as exc:
+        session.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    session.commit()
+    return {"market_id": row.market_id, "token": row.token, "status": row.status,
+            "stop_loss_price": str(row.stop_loss_price) if row.stop_loss_price is not None else None,
+            "take_profit_price": str(row.take_profit_price) if row.take_profit_price is not None else None}
+
+
+@app.delete("/paper/exits/{market_id}/{token}")
+def delete_exit(market_id: int, token: str, session: Session = Depends(get_session)) -> dict[str, object]:
+    market = session.get(Market, market_id)
+    if market is None:
+        raise HTTPException(404, "market not found")
+    clear_exit(session, market, token)
+    session.commit()
+    return {"cleared": True}
 
 
 def _replay_summary(run: ReplayRun) -> dict[str, object]:

@@ -29,14 +29,18 @@ class Settings(BaseSettings):
     max_market_exposure: Decimal = Field(default=Decimal("1000"), gt=0)
     max_total_exposure: Decimal = Field(default=Decimal("5000"), gt=0)
     max_daily_loss: Decimal = Field(default=Decimal("100"), gt=0)
-    market_page_size: int = Field(default=25, ge=1, le=1000)
-    market_pages: int = Field(default=2, ge=1, le=100)
+    market_page_size: int = Field(default=100, ge=1, le=1000)
+    market_pages: int = Field(default=5, ge=1, le=100)
     worker_refresh_seconds: int = Field(default=300, ge=10)
     worker_reconnect_seconds: int = Field(default=10, ge=1)
     max_market_data_age_seconds: int = Field(default=30, ge=1)
+    worker_stream_market_limit: int = Field(default=25, ge=1, le=100)
     worker_require_crypto: bool = True
     min_market_duration_minutes: int = Field(default=10, ge=1)
     max_market_duration_minutes: int = Field(default=20, ge=1)
+    # Auto-guard for strategy-opened positions: stop = entry - offset (0 disables).
+    auto_stop_loss_offset: Decimal = Field(default=Decimal("0.05"), ge=0, lt=1)
+    auto_take_profit_offset: Decimal = Field(default=Decimal("0"), ge=0, lt=1)
     paper_queue_model: Literal["optimistic", "baseline", "conservative"] = "baseline"
     account_data_base_url: str = "https://data-api.polymarket.com"
     account_positions_path: str = "/positions"

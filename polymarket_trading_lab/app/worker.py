@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -19,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .config import Settings, get_settings
 from .database import SessionLocal, init_db
+from .live import Quote, live_quotes
 from .market_data import (
     BookSnapshot,
     MarketEvent,
@@ -34,8 +37,14 @@ from .queue import QueueModel, QueueState, consume_queue, initial_queue_ahead
 from .risk import RiskChecker, RiskLimits
 from .runner import StrategyRunner
 from .strategy import CurrentBook, M1Config, M1Strategy
+from .trading import apply_auto_exit, evaluate_exits
 
 log = logging.getLogger(__name__)
+
+CRYPTO_KEYWORDS = frozenset({
+    "bitcoin", "btc", "ethereum", "eth", "solana", "sol", "xrp", "doge", "dogecoin",
+    "bnb", "hype", "zec", "crypto",
+})
 
 
 @dataclass(frozen=True)
@@ -61,6 +70,7 @@ class PaperMarketWorker:
         self.client = client or PolymarketPublicClient()
         self.strategy = strategy or M1Strategy(M1Config(max_order_size=self.settings.max_order_exposure))
         self._seen_trades: set[tuple[str, str, str, str, str]] = set()
+        self._last_book: dict[str, tuple[object, ...]] = {}
 
     def _broker(self, session: Session) -> PaperTrading:
         return PaperTrading(
@@ -110,7 +120,16 @@ class PaperMarketWorker:
             order="endDate",
             ascending=True,
         )
-        snapshots = [snapshot for snapshot in discovered if self._is_supported_market(snapshot)]
+        snapshots = []
+        excluded: Counter[str] = Counter()
+        for snapshot in discovered:
+            reason = self._exclusion_reason(snapshot)
+            if reason is None:
+                snapshots.append(snapshot)
+            else:
+                excluded[reason] += 1
+                log.debug("excluded market %s: %s", snapshot.slug, reason)
+        excluded_summary = ", ".join(f"{k}={v}" for k, v in sorted(excluded.items())) or "none"
         with self.session_factory() as session:
             for snapshot in snapshots:
                 self._upsert_market(session, snapshot)
@@ -118,21 +137,27 @@ class PaperMarketWorker:
                 session,
                 "market_data",
                 "ok",
-                f"discovered {len(discovered)}; selected {len(snapshots)} markets; queue_model={self.settings.paper_queue_model}",
+                f"discovered {len(discovered)}; selected {len(snapshots)} markets; excluded: {excluded_summary}; queue_model={self.settings.paper_queue_model}",
             )
             session.commit()
         return snapshots, WorkerStats(markets_seen=len(snapshots))
 
     def _is_supported_market(self, snapshot: MarketSnapshot) -> bool:
+        return self._exclusion_reason(snapshot) is None
+
+    def _exclusion_reason(self, snapshot: MarketSnapshot) -> str | None:
         if not self.settings.worker_require_crypto:
-            return True
+            return None
         if snapshot.start_time is None:
-            return False
+            return "missing_start_time"
         duration_minutes = (snapshot.end_time - snapshot.start_time).total_seconds() / 60
         if not self.settings.min_market_duration_minutes <= duration_minutes <= self.settings.max_market_duration_minutes:
-            return False
+            return "duration_outside_window"
         text = f"{snapshot.question} {snapshot.slug or ''} {snapshot.category or ''}".lower()
-        return any(keyword in text for keyword in ("bitcoin", "btc", "ethereum", "eth", "solana", "sol", "crypto"))
+        tokens = set(re.split(r"[^a-z0-9]+", text))
+        if not tokens & CRYPTO_KEYWORDS:
+            return "not_crypto"
+        return None
 
     def process_event(self, event: MarketEvent) -> WorkerStats:
         with self.session_factory() as session:
@@ -157,12 +182,34 @@ class PaperMarketWorker:
         if event.event_type == "book":
             book = payload
             assert isinstance(book, BookSnapshot)
+            book_key = (book.observed_at, book.yes_bid, book.yes_bid_size, book.no_bid, book.no_bid_size)
+            if self._last_book.get(market.market_key) == book_key:
+                # The stream emits one identical snapshot per token update; one
+                # decision per distinct book is enough.
+                return WorkerStats()
+            self._last_book[market.market_key] = book_key
+            quote = Quote(book.observed_at, book.yes_bid, book.yes_bid_size, book.no_bid, book.no_bid_size)
+            live_quotes.record(market.market_key, quote)
             if market.status != "open":
+                return WorkerStats()
+            if event.occurred_at >= market.end_time:
+                # End time is not settlement. Stop making decisions and cancel
+                # resting paper orders, but wait for an explicit resolution
+                # event before paying out positions.
+                for order in session.scalars(
+                    select(PaperOrder).where(
+                        PaperOrder.market_id == market.id,
+                        PaperOrder.status.in_(("open", "partially_filled")),
+                    )
+                ):
+                    order.status = "cancelled"
+                market.status = "closed"
                 return WorkerStats()
             age = event.occurred_at - book.observed_at
             if age.total_seconds() > self.settings.max_market_data_age_seconds:
                 self._health(session, "market_data", "stale", f"book for {market.market_key} is {age.total_seconds():.1f}s old")
                 return WorkerStats()
+            evaluate_exits(session, broker, market, quote, event.occurred_at)
             before = self._open_order_ids(session, market.id)
             decision = StrategyRunner(session, self.strategy, broker).evaluate(
                 market,
@@ -282,6 +329,10 @@ class PaperMarketWorker:
             broker.fill_order(order, now=trade.observed_at, price=order.price, quantity=quantity, event_id=order_event_id)
             remaining_trade -= quantity
             filled += 1
+            apply_auto_exit(
+                session, market, order.token,
+                self.settings.auto_stop_loss_offset, self.settings.auto_take_profit_offset,
+            )
         return filled
 
     def _new_trade(self, trade: TradeSnapshot) -> bool:
@@ -335,31 +386,55 @@ class PaperMarketWorker:
                 raise
             except Exception as exc:
                 delay = self.settings.worker_reconnect_seconds
-                log.exception("paper worker cycle failed: %s", exc)
+                log.warning("paper worker cycle failed; retrying in %ss: %s", delay, exc)
                 with self.session_factory() as session:
                     self._health(session, "market_data", "error", str(exc)[:500])
                     session.commit()
             await asyncio.sleep(delay)
 
     async def _stream_cycle(self, snapshots: list[MarketSnapshot]) -> None:
-        active = [snapshot for snapshot in snapshots if snapshot.status == "open"]
+        active = [snapshot for snapshot in snapshots if snapshot.status == "open"][: self.settings.worker_stream_market_limit]
         if not active:
             await asyncio.sleep(self.settings.worker_refresh_seconds)
             return
         stream = PolymarketMarketStream(active)
         iterator = stream.events().__aiter__()
+        queue: asyncio.Queue[MarketEvent | None] = asyncio.Queue(maxsize=2048)
+        producer_error: list[BaseException] = []
+
+        async def receive() -> None:
+            try:
+                async for event in iterator:
+                    await queue.put(event)
+            except asyncio.CancelledError:
+                raise
+            except BaseException as exc:
+                producer_error.append(exc)
+            finally:
+                try:
+                    queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    # The consumer is shutting down or the stream is too
+                    # busy; cancellation/timeout will close the socket.
+                    pass
+
+        receiver = asyncio.create_task(receive(), name="polymarket-market-receiver")
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(
-                        iterator.__anext__(), timeout=self.settings.worker_refresh_seconds
-                    )
+                    event = await asyncio.wait_for(queue.get(), timeout=self.settings.worker_refresh_seconds)
                 except asyncio.TimeoutError:
                     return
-                except StopAsyncIteration:
+                if event is None:
+                    if producer_error:
+                        raise producer_error[0]
                     return
-                self.process_event(event)
+                # Database work is synchronous. Keep the event-loop receiver
+                # draining the socket while one event is being persisted.
+                await asyncio.to_thread(self.process_event, event)
         finally:
+            receiver.cancel()
+            await asyncio.gather(receiver, return_exceptions=True)
             close = getattr(iterator, "aclose", None)
             if close is not None:
                 await close()

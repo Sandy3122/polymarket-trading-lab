@@ -201,6 +201,12 @@ and retries a failed market-data connection after
 `WORKER_RECONNECT_SECONDS`. Normal market refreshes use
 `WORKER_REFRESH_SECONDS`.
 
+The WebSocket receiver is decoupled from database processing so synchronous
+SQLite/PostgreSQL writes do not stop the socket from being drained. The worker
+also limits one subscription to `WORKER_STREAM_MARKET_LIMIT` markets and uses
+an in-memory receive buffer. This avoids the public CLOB `1013 slow consumer`
+close that can occur when too many book updates are subscribed at once.
+
 ### Queue/fill models
 
 Because public data cannot reveal exact queue position, paper orders use one of
@@ -245,3 +251,10 @@ python -m compileall -q app tests migrations
 
 All external adapter tests use mocked transports. They do not contact
 Polymarket during the test suite.
+
+## Stop loss / take profit
+
+Positions can be guarded from the dashboard. Positions opened by the M1
+strategy get an automatic stop loss at `entry - AUTO_STOP_LOSS_OFFSET`
+(default 0.05; optional `AUTO_TAKE_PROFIT_OFFSET`, default off). Active levels,
+including manual ones, are never overridden. Set either offset to 0 to disable.

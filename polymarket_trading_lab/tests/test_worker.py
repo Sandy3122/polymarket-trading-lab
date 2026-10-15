@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.market_data import BookSnapshot, MarketEvent, MarketSnapshot, Resolution, TradeSnapshot
-from app.models import Market, PaperOrder, Position
+from app.models import Market, PaperOrder, Position, SystemHealth
 from app.worker import PaperMarketWorker
 from app.config import Settings
 
@@ -109,3 +109,31 @@ def test_worker_rejects_stale_book_before_creating_an_order() -> None:
     assert stats.orders_created == 0
     with factory() as session:
         assert session.scalar(select(PaperOrder).where(PaperOrder.market_id == 1)) is None
+
+
+def test_worker_records_exclusion_reasons_for_unselected_markets() -> None:
+    now = datetime.now(timezone.utc)
+
+    def snap(mid: str, slug: str, minutes: int | None, question: str = "Up or Down") -> MarketSnapshot:
+        end = now + timedelta(minutes=5)
+        start = None if minutes is None else end - timedelta(minutes=minutes)
+        return MarketSnapshot(mid, question, end, now, slug=slug, start_time=start, yes_token_id=f"y{mid}", no_token_id=f"n{mid}")
+
+    snaps = [
+        snap("a", "xrp-updown-15m-1", 15),
+        snap("b", "btc-updown-5m-1", 5),
+        snap("c", "btc-above-80000", 1440),
+        snap("d", "btc-strike", None),
+        snap("e", "election-2028", 15, question="Who wins?"),
+    ]
+    factory = make_factory()
+    worker = PaperMarketWorker(session_factory=factory, client=FakeClient(snaps, {}), settings=Settings())
+    selected, _ = worker.sync_markets()
+
+    assert [m.market_id for m in selected] == ["a"]
+    with factory() as session:
+        message = session.execute(select(SystemHealth)).scalars().one().details
+    assert "selected 1" in message
+    assert "duration_outside_window=2" in message
+    assert "missing_start_time=1" in message
+    assert "not_crypto=1" in message
