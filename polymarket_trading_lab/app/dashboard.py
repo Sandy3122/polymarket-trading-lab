@@ -151,6 +151,35 @@ canvas{touch-action:pan-y}
 }
 @media(max-width:380px){.kpis{grid-template-columns:1fr}.quotes{grid-template-columns:1fr 1fr}}
 @media(min-width:1700px){.wrap{max-width:1600px}}
+
+/* ---------- insights drawer ---------- */
+.insbtn{display:inline-flex;align-items:center;gap:6px;font-weight:650;border-color:var(--blue);color:var(--blue)}
+#insBackdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;z-index:30}
+#insBackdrop.open{opacity:1;pointer-events:auto}
+#insDrawer{position:fixed;top:0;right:0;bottom:0;width:min(470px,100vw);background:var(--card);border-left:1px solid var(--line);z-index:31;display:flex;flex-direction:column;transform:translateX(105%);transition:transform .25s ease;box-shadow:-12px 0 32px rgba(0,0,0,.35)}
+#insDrawer.open{transform:none}
+.dh{padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+.dh .top2{display:flex;gap:12px;align-items:center}.dh .nm{flex:1;min-width:0}.dh .nm b{display:block;font-size:16px}.dh .nm small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dtabs{display:flex;gap:4px;padding:0 12px;border-bottom:1px solid var(--line)}
+.dtabs button{flex:1;border:0;background:transparent;border-bottom:2px solid transparent;border-radius:0;color:var(--mute);padding:10px 6px;font-weight:600}
+.dtabs button.on{color:var(--ink);border-bottom-color:var(--blue)}
+.db{flex:1;overflow-y:auto;padding:14px 16px;-webkit-overflow-scrolling:touch}
+.df{padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);display:flex;gap:8px}
+.df button{flex:1;padding:12px;font-weight:800}
+.hl2{font-size:16px;font-weight:700;line-height:1.35;margin:0 0 12px}
+.meter{position:relative;height:10px;border-radius:6px;background:var(--card2);border:1px solid var(--line);margin:6px 0 4px}
+.meter i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:linear-gradient(90deg,var(--blue),var(--green))}
+.meter u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--amber)}
+.sum{font-size:12.5px;color:var(--mute);margin:2px 0 10px}
+.db h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin:16px 0 6px}
+body.lock{overflow:hidden}
+@media(max-width:700px){
+  #insDrawer{top:auto;left:0;right:0;width:100%;max-height:90vh;height:90vh;border-left:0;border-top:1px solid var(--line);border-radius:18px 18px 0 0;transform:translateY(105%);box-shadow:0 -12px 32px rgba(0,0,0,.35)}
+  #insDrawer.open{transform:none}
+  .dh::before{content:"";display:block;width:42px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 10px}
+  .insbtn{flex:1}
+}
+@media(prefers-reduced-motion:reduce){#insDrawer,#insBackdrop{transition:none}}
 </style></head><body><div class="wrap">
 
 <div class="top">
@@ -168,15 +197,13 @@ canvas{touch-action:pan-y}
 
 <div class="kpis" id="kpis"></div>
 
-<div class="row" style="margin:0 0 8px;flex-wrap:wrap;gap:10px"><div class="chips" id="vfilter" style="flex:none"></div><span class="mute" style="font-size:12px;flex:1"><span id="mktCount"></span> · 👆 click a market for buy/wait insights · <a href="#guide" style="color:var(--blue)">More markets? Open the Guide →</a></span></div>
+<div class="row" style="margin:0 0 8px;flex-wrap:wrap;gap:10px"><div class="chips" id="vfilter" style="flex:none"></div><select id="vsort" style="width:auto;padding:5px 9px;font-size:12px" title="Sort the market cards"><option value="best">Sort: Best setup first</option><option value="ending">Sort: Ending soonest</option><option value="price">Sort: Highest favourite price</option><option value="move">Sort: Biggest 1-min move</option><option value="spread">Sort: Tightest spread</option><option value="name">Sort: Name A–Z</option></select><span class="mute" style="font-size:12px;flex:1"><span id="mktCount"></span> · 👆 click a market to chart it · 💡 Insights button for buy/wait · <a href="#guide" style="color:var(--blue)">More markets? Open the Guide →</a></span></div>
 <div class="mkts" id="mkts"></div>
-
-<div class="card" id="insPanel" style="display:none;margin-bottom:12px"></div>
 
 <div class="main">
   <div class="card">
     <div class="head"><div><h2 id="mTitle">Select a market</h2><small id="mMeta"></small></div>
-      <div class="chips"><div class="seg" id="rangeSeg"><button data-r="60">1m</button><button data-r="300">5m</button><button data-r="0" class="on">All</button></div></div></div>
+      <div class="chips"><button id="btnIns" class="insbtn" title="Open buy / wait insights for this market">💡 Insights <span id="insDot" class="vchip" style="display:none"></span></button><div class="seg" id="rangeSeg"><button data-r="60">1m</button><button data-r="300">5m</button><button data-r="0" class="on">All</button></div></div></div>
     <div class="quotes" id="quotes"></div>
     <canvas id="chart"></canvas>
     <div class="legend">
@@ -189,7 +216,7 @@ canvas{touch-action:pan-y}
 
   <div class="card">
     <div class="head"><h2>Trade ticket</h2><small>paper money</small></div>
-    <div id="tIns" style="display:none"></div>
+    <div id="tIns" style="display:none;cursor:pointer" title="Open full insights"></div>
     <div class="tok" id="tokSeg"><button data-t="YES" class="on">YES</button><button data-t="NO">NO</button></div>
     <label>Shares</label>
     <div class="row wrapRow"><input id="qty" type="number" min="1" step="1" value="10">
@@ -221,7 +248,7 @@ canvas{touch-action:pan-y}
   </div>
   <div class="card"><div class="head"><h2>Equity curve</h2><small>this browser session</small></div><canvas id="eq"></canvas><div id="eqNote" class="est"></div></div>
 </div>
-</div><div id="viewGuide" class="gd" style="display:none"></div></div><div id="toasts"></div>
+</div><div id="viewGuide" class="gd" style="display:none"></div></div><div id="insBackdrop"></div><aside id="insDrawer" aria-label="Market insights" aria-hidden="true"></aside><div id="toasts"></div>
 
 <script>
 const $=s=>document.querySelector(s);
@@ -304,15 +331,28 @@ async function loadLive(){
   if(S.live.length&&(!S.market||!S.live.some(m=>String(m.id)===String(S.market))))S.market=S.live[0].id;
   renderMarkets();$('#mktCount').textContent=S.live.length+' live market'+(S.live.length===1?'':'s')+' showing';const fresh=S.live.length?Math.min(...S.live.map(m=>(Date.now()-Date.parse(m.quote.observed_at))/1000)):null;
   $('#tFeed').textContent=fresh==null?'feed: none':`feed ${S.live.length} mkts · ${fresh.toFixed(0)}s ago`;$('#dFeed').className='dot '+(fresh==null?'':fresh<15?'ok':fresh<60?'warn':'bad')}
+const RANK={BUY:0,WAIT:1,AVOID:2};
+let vsort=localStorage.getItem('vsort')||'best';
+function sortMarkets(list,held){
+  const end=m=>Date.parse(m.end_time),ins=m=>insFor(m.id),fav=m=>Math.max(+(m.quote.yes_bid||0),+(m.quote.no_bid||0));
+  const key={
+    best:(a,b)=>((RANK[ins(a)?.verdict]??3)-(RANK[ins(b)?.verdict]??3))||((ins(b)?.score||0)-(ins(a)?.score||0))||(end(a)-end(b)),
+    ending:(a,b)=>end(a)-end(b),
+    price:(a,b)=>fav(b)-fav(a),
+    move:(a,b)=>Math.abs(ins(b)?.metrics.change_60s_cents||0)-Math.abs(ins(a)?.metrics.change_60s_cents||0),
+    spread:(a,b)=>(ins(a)?.metrics.spread_cents??99)-(ins(b)?.metrics.spread_cents??99),
+    name:(a,b)=>asset(a.question).localeCompare(asset(b.question))||end(a)-end(b)}[vsort]||(()=>0);
+  // markets you hold are pinned first, then the chosen order
+  return [...list].sort((a,b)=>(held.has(String(b.id))-held.has(String(a.id)))||key(a,b))}
 function renderMarkets(){
   const held=new Set((S.portfolio?.positions||[]).map(p=>String(p.market_id)));
-  const list=S.live.filter(m=>vf==='ALL'||(insFor(m.id)||{}).verdict===vf);
+  const list=sortMarkets(S.live.filter(m=>vf==='ALL'||(insFor(m.id)||{}).verdict===vf),held);
   $('#mkts').innerHTML=list.length?list.map(m=>{const left=Math.floor((Date.parse(m.end_time)-Date.now())/1000);const win=left>0&&left<=120;const v=(insFor(m.id)||{}).verdict||'';
    return `<div class="mk ${String(m.id)===String(S.market)?'sel':''} ${v}" data-m="${m.id}"><div class="t"><span>${esc(asset(m.question))}</span>${v?`<span class="vchip ${v}">${v}</span>`:''}</div>
    <div class="row" style="justify-content:space-between"><div><b class="pos">${f(m.quote.yes_bid,2)}</b> <small>YES</small> ${held.has(String(m.id))?'<span class="held">● held</span>':''}</div>${sparkSvg(m.spark)}</div>
    <div class="t"><span>NO ${f(m.quote.no_bid,2)}</span><span class="${win?'win':''}" data-end="${esc(m.end_time)}">${cd(left)}${win?' · M1 window':''}</span></div></div>`}).join(''):`<div class="card empty" style="width:100%">${S.live.length?'No markets with this verdict right now.':'No live markets yet.'}</div>`}
 const cd=s=>s<=0?'ended':Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
-$('#mkts').addEventListener('click',e=>{const el=e.target.closest('.mk');if(!el)return;const same=String(S.market)===el.dataset.m;S.market=el.dataset.m;S.hover=null;insOpen=same?!insOpen:true;renderMarkets();renderInsPanel();loadTicks()});
+$('#mkts').addEventListener('click',e=>{const el=e.target.closest('.mk');if(!el)return;S.market=el.dataset.m;S.hover=null;renderMarkets();renderInsDrawer();loadTicks();showTicketInsight()});
 setInterval(()=>{document.querySelectorAll('[data-end]').forEach(el=>{const left=Math.floor((Date.parse(el.dataset.end)-Date.now())/1000);el.textContent=cd(left)+(left>0&&left<=120?' · M1 window':'')});$('#clock').textContent=new Date().toISOString().slice(11,19)+' UTC'},1000);
 
 async function loadTicks(){
@@ -404,38 +444,60 @@ const verdictText={BUY:'BUY SETUP',WAIT:'WAIT',AVOID:'AVOID'};
 const insFor=id=>INS.find(x=>String(x.market_id)===String(id));
 async function loadInsights(){
   try{INS=(await api('/insights')).items}catch(e){return}
-  renderFilter();renderMarkets();if(insOpen)renderInsPanel();showTicketInsight()}
+  renderFilter();renderMarkets();if(insOpen)renderInsDrawer();showTicketInsight()}
 function renderFilter(){const c={ALL:S.live.length,BUY:0,WAIT:0,AVOID:0};INS.forEach(i=>c[i.verdict]++);
   $('#vfilter').innerHTML=['ALL','BUY','WAIT','AVOID'].map(k=>`<span class="fchip ${vf===k?'on':''}" data-vf="${k}">${k==='ALL'?'All':k==='BUY'?'🟢 Buy setups':k==='WAIT'?'🟡 Wait':'🔴 Avoid'} · ${c[k]}</span>`).join('')}
+$('#vsort').value=vsort;$('#vsort').onchange=e=>{vsort=e.target.value;localStorage.setItem('vsort',vsort);renderMarkets()};
 $('#vfilter').addEventListener('click',e=>{const k=e.target.dataset.vf;if(!k)return;vf=k;renderFilter();renderMarkets()});
 function ring(score,col){const r=26,c=2*Math.PI*r;return `<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${r}" fill="none" stroke="var(--line)" stroke-width="6"/><circle cx="32" cy="32" r="${r}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${(c*score/100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 32 32)"/><text x="32" y="37" text-anchor="middle" font-size="16" font-weight="700" fill="var(--ink)">${score}</text></svg>`}
-function renderInsPanel(){
-  const el=$('#insPanel'),i=insFor(S.market);if(!insOpen||!i){el.style.display='none';return}el.style.display='';
+let insTab='sum';
+function openIns(v){insOpen=v;renderInsDrawer()}
+function renderInsDrawer(){
+  const el=$('#insDrawer'),bd=$('#insBackdrop'),i=insFor(S.market);
+  const open=insOpen&&!!i;el.classList.toggle('open',open);bd.classList.toggle('open',open);el.setAttribute('aria-hidden',String(!open));document.body.classList.toggle('lock',open&&innerWidth<=700);
+  if(!open){if(insOpen&&!i)el.innerHTML='';return}
   const m=i.metrics,g=i.suggestion,col=i.verdict==='BUY'?'var(--green)':i.verdict==='WAIT'?'var(--amber)':'var(--red)';
-  const headline=i.verdict==='BUY'?'Conditions fit the M1 pattern. Review the plan and the risk below before buying.':i.verdict==='WAIT'?'Not yet. '+(i.next_steps[0]||i.reasons[0]||''):'Skip this one. '+(i.reasons[0]||'');
+  const headline=i.verdict==='BUY'?'Conditions fit the M1 pattern. Check the plan and risk before buying.':i.verdict==='WAIT'?'Not yet. '+(i.next_steps[0]||i.reasons[0]||''):'Skip this one. '+(i.reasons[0]||'');
+  const passed=i.checks.filter(c=>!c.info&&c.status==='pass').length,total=i.checks.filter(c=>!c.info).length;
   const icon={pass:'✓',warn:'!',fail:'✗'};
-  const checks=i.checks.map(c=>`<div class="ck ${c.info?'info':c.status}"><div class="ic2">${c.info?'i':icon[c.status]}</div><div><b>${esc(c.name)}</b><span>${esc(c.detail)}</span></div></div>`).join('');
-  const tiles=[['Favourite',i.favourite+' '+f(m.bid,2)],['Ask (you pay)',f(m.ask,2)],['Market says',m.implied_probability==null?'—':(m.implied_probability*100).toFixed(0)+'% likely'],['Spread',m.spread_cents==null?'—':m.spread_cents+'¢'],
-    ['Depth',m.depth==null?'—':Math.round(m.depth)+' sh'],['Momentum',m.change_60s_cents==null?'—':(m.change_60s_cents>=0?'+':'')+m.change_60s_cents+'¢/min'],['2-min range',m.range_2m_cents==null?'—':m.range_2m_cents+'¢'],['Time left',cd(i.seconds_left)]]
-    .map(t=>`<div><small>${t[0]}</small><b>${esc(t[1])}</b></div>`).join('');
-  let plan='<p class="mute">No trade plan: this market can\'t be entered right now.</p>';
-  if(g){const rows=[['Right ('+g.token+' wins)',g.max_gain,'pos'],...(g.max_loss_at_stop!=null?[['Stop hit',-g.max_loss_at_stop,'neg']]:[]),['Wrong, no stop',-g.max_loss_if_wrong,'neg']];const mx=Math.max(...rows.map(r=>Math.abs(r[1])))||1;
-    const implied=m.implied_probability!=null?(m.implied_probability*100).toFixed(0):null;
-    plan=`<div class="mute" style="font-size:12.5px">Buy <b>${g.shares} ${esc(g.token)}</b> ≈ <b>${money(g.cost)}</b> at ${f(g.entry,2)}${g.stop?` · stop ${f(g.stop,2)}`:''}${g.target?` · target ${f(g.target,2)}`:''}</div>`+
-      rows.map(r=>`<div class="sn ${r[2]}"><span>${esc(r[0])}</span><div><i style="width:${Math.max(3,Math.abs(r[1])/mx*100).toFixed(0)}%"></i></div><b class="${r[2]}">${signed(r[1])}</b></div>`).join('')+
-      `<div class="note">You must be right <b>${(g.break_even_win_rate*100).toFixed(0)}%</b> of the time to break even holding to the end${g.needed_win_rate_with_stop?` (<b>${(g.needed_win_rate_with_stop*100).toFixed(0)}%</b> with the stop)`:''}. ${implied?`The market already prices this at ~${implied}%, so you only profit if the real chance is higher — the app can't know that.`:''}</div>`}
-  el.innerHTML=`<div class="head"><h2>💡 ${esc(i.question)}</h2><div class="row fit"><button class="mini" id="insChart">View chart ↓</button><button class="mini" id="insClose">✕ Close</button></div></div>
-  <div class="ip"><div>
-    <div class="hd">${ring(i.score,col)}<div class="tx"><span class="vd ${i.verdict}">${verdictText[i.verdict]}</span><div class="big2" style="margin-top:6px">${esc(headline)}</div></div></div>
-    <h3>Checklist</h3>${checks}</div>
-   <div><h3 style="margin-top:0">Live numbers</h3><div class="mt">${tiles}</div>
-    <h3>If you buy now</h3>${plan}
-    ${i.next_steps.length?`<h3>What would turn this into a buy</h3><ul class="steps">${i.next_steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
-    <div class="row" style="margin-top:12px">${g?`<button class="buy" style="border:0;padding:10px;color:#06210f;font-weight:800" data-load="${i.market_id}|${esc(g.token)}|${g.shares}">Load ${g.shares} ${esc(g.token)} into ticket</button>`:''}</div></div></div>
-  <div class="disc">Rule-based checks, not predictions. A "BUY SETUP" means the market fits the M1 pattern and the risk is spelled out — not that it will win. Paper trading only. Not financial advice.</div>`;
-  $('#insClose').onclick=()=>{insOpen=false;renderInsPanel()};$('#insChart').onclick=()=>$('#chart').scrollIntoView({behavior:'smooth',block:'center'})}
-function showTicketInsight(){const i=insFor(S.market),el=$('#tIns');if(!i){el.style.display='none';return}
-  el.style.display='';el.className=i.verdict;el.innerHTML=`<b>${verdictText[i.verdict]}</b> — ${esc(i.reasons[0]||'')}`}
+  let body='';
+  if(insTab==='sum'){
+    const ip=m.implied_probability;
+    const tiles=[['Favourite',i.favourite+' '+f(m.bid,2)],['You pay (ask)',f(m.ask,2)],['Spread',m.spread_cents==null?'—':m.spread_cents+'¢'],['Depth',m.depth==null?'—':Math.round(m.depth)+' shares'],
+      ['Momentum',m.change_60s_cents==null?'—':(m.change_60s_cents>=0?'+':'')+m.change_60s_cents+'¢/min'],['2-min range',m.range_2m_cents==null?'—':m.range_2m_cents+'¢'],['Time left',cd(i.seconds_left)],['Checks passed',passed+' / '+total]]
+      .map(t=>`<div><small>${t[0]}</small><b>${esc(t[1])}</b></div>`).join('');
+    body=`<p class="hl2">${esc(headline)}</p>
+     ${ip!=null?`<small class="mute">Market says ${esc(i.favourite)} is</small><div class="meter"><i style="width:${(ip*100).toFixed(0)}%"></i><u style="left:${(Math.min(.99,Math.max(.01,m.ask||ip))*100).toFixed(0)}%" title="your entry"></u></div><div class="sum"><b>${(ip*100).toFixed(0)}%</b> likely. The amber line is what you would pay (${f(m.ask,2)}).</div>`:''}
+     <div class="mt">${tiles}</div>
+     ${i.next_steps.length?`<h3>What would turn this into a buy</h3><ul class="steps">${i.next_steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+     ${i.verdict==='BUY'&&g?`<div class="note">Looks like a setup. You'd risk <b>${money(g.max_loss_at_stop??g.max_loss_if_wrong)}</b> at the stop to win up to <b>${money(g.max_gain)}</b>. See the <a href="#" data-dtab="plan" style="color:var(--blue)">Trade plan</a>.</div>`:''}`;
+  }else if(insTab==='chk'){
+    body=`<div class="sum">${passed} of ${total} required checks passed. Every one must be green or amber for a BUY SETUP.</div>`+
+      i.checks.map(c=>`<div class="ck ${c.info?'info':c.status}"><div class="ic2">${c.info?'i':icon[c.status]}</div><div><b>${esc(c.name)}${c.info?' <small class="mute">(info only)</small>':''}</b><span>${esc(c.detail)}</span></div></div>`).join('');
+  }else{
+    if(!g)body='<p class="mute">No trade plan: this market can\'t be entered right now.</p>';
+    else{const rows=[['Right ('+g.token+' wins)',g.max_gain,'pos'],...(g.max_loss_at_stop!=null?[['Stop hit',-g.max_loss_at_stop,'neg']]:[]),['Wrong, no stop',-g.max_loss_if_wrong,'neg']];const mx=Math.max(...rows.map(r=>Math.abs(r[1])))||1;
+      body=`<p class="hl2">Buy ${g.shares} ${esc(g.token)} ≈ ${money(g.cost)} at ${f(g.entry,2)}</p>
+       <div class="sum">${g.stop?`Stop ${f(g.stop,2)}`:'No stop'}${g.target?` · target ${f(g.target,2)}`:''} · sized to risk about 1% of your equity at the stop, capped by your max-per-order setting.</div>
+       <h3 style="margin-top:6px">What could happen</h3>`+
+       rows.map(r=>`<div class="sn ${r[2]}"><span>${esc(r[0])}</span><div><i style="width:${Math.max(3,Math.abs(r[1])/mx*100).toFixed(0)}%"></i></div><b class="${r[2]}">${signed(r[1])}</b></div>`).join('')+
+       `<div class="note">You must be right <b>${(g.break_even_win_rate*100).toFixed(0)}%</b> of the time to break even holding to the end${g.needed_win_rate_with_stop?` (<b>${(g.needed_win_rate_with_stop*100).toFixed(0)}%</b> with the stop)`:''}. ${m.implied_probability!=null?`The market already prices this at about ${(m.implied_probability*100).toFixed(0)}%, so you only profit if the real chance is higher — the app can't know that.`:''}</div>`}
+  }
+  el.innerHTML=`<div class="dh"><div class="top2">${ring(i.score,col)}<div class="nm"><span class="vd ${i.verdict}">${verdictText[i.verdict]}</span><b style="margin-top:4px">${esc(asset(i.question))}</b><small class="mute">${esc(i.question)}</small></div><button class="mini" id="insClose" aria-label="Close insights">✕</button></div></div>
+   <div class="dtabs"><button data-dtab="sum" class="${insTab==='sum'?'on':''}">Summary</button><button data-dtab="chk" class="${insTab==='chk'?'on':''}">Checklist</button><button data-dtab="plan" class="${insTab==='plan'?'on':''}">Trade plan</button></div>
+   <div class="db">${body}<div class="disc">Rule-based checks, not predictions or financial advice. Paper trading only.</div></div>
+   <div class="df">${g?`<button class="buy" style="border:0;color:#06210f" data-load="${i.market_id}|${esc(g.token)}|${g.shares}">Load ${g.shares} ${esc(g.token)} into ticket</button>`:'<button disabled>Nothing to load</button>'}<button id="insChart" style="flex:none">Chart</button></div>`;
+  const sc=el.querySelector('.db');if(el._tab===insTab&&el._mkt===S.market)sc.scrollTop=el._st||0;
+  sc.addEventListener('scroll',()=>{el._st=sc.scrollTop;el._tab=insTab;el._mkt=S.market});
+  $('#insClose').onclick=()=>openIns(false);$('#insChart').onclick=()=>{openIns(false);$('#chart').scrollIntoView({behavior:'smooth',block:'center'})}}
+$('#insDrawer').addEventListener('click',e=>{const t=e.target.dataset.dtab;if(t){e.preventDefault();insTab=t;const el=$('#insDrawer');el._st=0;renderInsDrawer()}});
+$('#insBackdrop').onclick=()=>openIns(false);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&insOpen)openIns(false)});
+$('#btnIns').onclick=()=>openIns(!insOpen);$('#tIns').onclick=()=>openIns(true);
+function showTicketInsight(){const i=insFor(S.market),el=$('#tIns'),dot=$('#insDot');
+  if(!i){el.style.display='none';dot.style.display='none';return}
+  dot.style.display='';dot.className='vchip '+i.verdict;dot.textContent=i.verdict;
+  el.style.display='';el.className=i.verdict;el.innerHTML=`<b>${verdictText[i.verdict]}</b> — ${esc(i.reasons[0]||'')} <span class="mute">· tap for details</span>`}
 document.addEventListener('click',async e=>{const d=e.target.dataset.load;if(!d)return;const [m,t,q]=d.split('|');S.market=m;setToken(t);$('#qty').value=q;await loadTicks();renderMarkets();$('#tokSeg').scrollIntoView({behavior:'smooth',block:'center'});toast(`Loaded ${q} ${t} — review, then press BUY`)});
 setInterval(loadInsights,3000);
 
