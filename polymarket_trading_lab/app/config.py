@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     market_page_size: int = Field(default=25, ge=1, le=1000)
     market_pages: int = Field(default=2, ge=1, le=100)
     worker_refresh_seconds: int = Field(default=300, ge=10)
+    worker_reconnect_seconds: int = Field(default=10, ge=1)
+    max_market_data_age_seconds: int = Field(default=30, ge=1)
     worker_require_crypto: bool = True
     min_market_duration_minutes: int = Field(default=10, ge=1)
     max_market_duration_minutes: int = Field(default=20, ge=1)

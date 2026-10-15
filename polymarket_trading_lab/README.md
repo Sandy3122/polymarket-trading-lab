@@ -65,9 +65,11 @@ For one bounded discovery/book cycle:
 polymarket-lab paper-worker --once
 ```
 
-The default worker selection is deliberately narrow: binary markets with a
-10–20 minute duration and crypto-related question/slug text. For arbitrary
-fixture markets, set `WORKER_REQUIRE_CRYPTO=false`.
+The worker asks Gamma for active markets ordered by the nearest end time and
+constrains the query to the next short-duration window before applying a
+second local filter. The default selection is deliberately narrow: binary
+markets with a 10–20 minute duration and crypto-related question/slug text.
+For arbitrary fixture markets, set `WORKER_REQUIRE_CRYPTO=false`.
 
 ## Use Supabase or another database
 
@@ -193,6 +195,11 @@ and fills them only when a later public SELL trade matches the token and price.
 It persists external trade IDs so a restart cannot count the same fill twice.
 It settles positions only on a normalized resolution event. Real order
 submission is not part of this worker.
+
+The worker rejects stale book events older than `MAX_MARKET_DATA_AGE_SECONDS`
+and retries a failed market-data connection after
+`WORKER_RECONNECT_SECONDS`. Normal market refreshes use
+`WORKER_REFRESH_SECONDS`.
 
 ### Queue/fill models
 

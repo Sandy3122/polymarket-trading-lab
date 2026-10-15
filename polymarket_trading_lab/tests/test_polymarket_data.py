@@ -71,6 +71,32 @@ def test_public_client_discovers_binary_markets_and_fetches_books() -> None:
     assert any("/book?token_id=no-asset" in url for _, url in calls)
 
 
+def test_market_discovery_passes_targeting_filters() -> None:
+    calls: list[str] = []
+
+    def transport(method: str, url: str, body: object | None) -> object:
+        calls.append(url)
+        return []
+
+    client = PolymarketPublicClient(transport=transport)
+    client.list_markets(
+        limit=25,
+        max_pages=1,
+        active=True,
+        end_date_min=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        end_date_max=datetime(2030, 1, 1, 0, 20, tzinfo=timezone.utc),
+        order="endDate",
+        ascending=True,
+    )
+
+    assert len(calls) == 1
+    assert "active=true" in calls[0]
+    assert "end_date_min=2030-01-01T00%3A00%3A00%2B00%3A00" in calls[0]
+    assert "end_date_max=2030-01-01T00%3A20%3A00%2B00%3A00" in calls[0]
+    assert "order=endDate" in calls[0]
+    assert "ascending=true" in calls[0]
+
+
 def test_public_client_skips_unsupported_markets_and_rejects_bad_books() -> None:
     def transport(method: str, url: str, body: object | None) -> object:
         if "/markets" in url:

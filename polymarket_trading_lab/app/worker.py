@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -106,7 +106,7 @@ class PaperMarketWorker:
             closed=False,
             active=True,
             end_date_min=now,
-            end_date_max=now + __import__("datetime").timedelta(minutes=self.settings.max_market_duration_minutes + 2),
+            end_date_max=now + timedelta(minutes=self.settings.max_market_duration_minutes + 2),
             order="endDate",
             ascending=True,
         )
@@ -158,6 +158,10 @@ class PaperMarketWorker:
             book = payload
             assert isinstance(book, BookSnapshot)
             if market.status != "open":
+                return WorkerStats()
+            age = event.occurred_at - book.observed_at
+            if age.total_seconds() > self.settings.max_market_data_age_seconds:
+                self._health(session, "market_data", "stale", f"book for {market.market_key} is {age.total_seconds():.1f}s old")
                 return WorkerStats()
             before = self._open_order_ids(session, market.id)
             decision = StrategyRunner(session, self.strategy, broker).evaluate(
@@ -323,17 +327,19 @@ class PaperMarketWorker:
     async def run_forever(self) -> None:
         init_db()
         while True:
+            delay = self.settings.worker_refresh_seconds
             try:
                 snapshots, _ = self.sync_markets()
                 await self._stream_cycle(snapshots)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                delay = self.settings.worker_reconnect_seconds
                 log.exception("paper worker cycle failed: %s", exc)
                 with self.session_factory() as session:
                     self._health(session, "market_data", "error", str(exc)[:500])
                     session.commit()
-            await asyncio.sleep(self.settings.worker_refresh_seconds)
+            await asyncio.sleep(delay)
 
     async def _stream_cycle(self, snapshots: list[MarketSnapshot]) -> None:
         active = [snapshot for snapshot in snapshots if snapshot.status == "open"]

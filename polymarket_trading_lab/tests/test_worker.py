@@ -86,3 +86,26 @@ def test_worker_deduplicates_same_trade_event() -> None:
     assert worker.process_event(event).fills == 0
     restarted_worker = PaperMarketWorker(session_factory=factory, client=FakeClient([market], {"m1": book}), settings=Settings(initial_cash=Decimal("100"), worker_require_crypto=False))
     assert restarted_worker.process_event(event).fills == 0
+
+
+def test_worker_rejects_stale_book_before_creating_an_order() -> None:
+    factory = make_factory()
+    now = datetime(2030, 1, 1, 12, tzinfo=timezone.utc)
+    market = MarketSnapshot("stale", "Question", now + timedelta(minutes=1), now, yes_token_id="yes", no_token_id="no")
+    worker = PaperMarketWorker(
+        session_factory=factory,
+        settings=Settings(initial_cash=Decimal("100"), worker_require_crypto=False, max_market_data_age_seconds=30),
+    )
+
+    worker.process_event(MarketEvent("market", now, market))
+    stats = worker.process_event(
+        MarketEvent(
+            "book",
+            now,
+            BookSnapshot("stale", now - timedelta(minutes=2), Decimal("0.97"), Decimal("5")),
+        )
+    )
+
+    assert stats.orders_created == 0
+    with factory() as session:
+        assert session.scalar(select(PaperOrder).where(PaperOrder.market_id == 1)) is None
