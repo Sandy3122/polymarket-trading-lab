@@ -192,7 +192,7 @@ function sparkSvg(a,w=90,h=24){if(!a||a.length<2)return '';const lo=Math.min(...
 
 async function loadOverview(){
   const x=await api('/ops/overview');const p=x.portfolio;S.portfolio=p;S.stats=x.stats;
-  const w=x.worker;$('#tWorker').textContent='worker '+w.status;$('#dWorker').className='dot '+(w.status==='running'?'ok':w.status==='stopped'?'':'bad');
+  const w=x.worker;$('#tWorker').textContent='worker '+w.status;$('#dWorker').className='dot '+(w.status==='running'?'ok':w.status==='stopped'?'':'bad');setWorkerButtons(w.status);
   const eq=Number(p.equity),init=10000;
   if(!S.eq.length||Date.now()-S.eq[S.eq.length-1].t>4000){S.eq.push({t:Date.now(),v:eq});S.eq=S.eq.slice(-400);localStorage.setItem('eq',JSON.stringify(S.eq))}
   const pct=(Number(p.total_pnl)/init*100);
@@ -321,7 +321,14 @@ async function protect(r){const set=Object.fromEntries((await api('/settings')).
 $('#btnBuy').onclick=()=>trade('BUY');$('#btnSell').onclick=()=>trade('SELL');
 $('#btnSetExit').onclick=async()=>{try{await post('/paper/exits',{market_id:+S.market,token:S.token,stop_loss_price:$('#sl').value||null,take_profit_price:$('#tp').value||null},'PUT');toast('Levels saved — worker will close the position when hit')}catch(e){toast(e.message,false)}refresh()};
 $('#btnClearExit').onclick=async()=>{try{await api(`/paper/exits/${S.market}/${S.token}`,{method:'DELETE'});$('#sl').value=$('#tp').value='';toast('Levels cleared')}catch(e){toast(e.message,false)}refresh()};
-async function worker(a){try{await api('/ops/worker/'+a,{method:'POST'});toast('Worker '+(a==='start'?'started':'stopped'))}catch(e){toast(e.message,false)}refresh()}
+let workerBusy=false;
+function setWorkerButtons(st){const run=st==='running',b1=$('#btnStart'),b2=$('#btnStop');
+  b1.textContent=workerBusy?'… working':run?'● Worker running':st==='error'||st==='stale'?'↻ Restart worker':'▶ Start worker';
+  b1.disabled=workerBusy||run;b2.disabled=workerBusy||!run;b1.title=run?'The worker is already running':'';b2.title=run?'':'The worker is not running';
+  b1.classList.toggle('on',run)}
+async function worker(a){if(workerBusy)return;workerBusy=true;setWorkerButtons(a==='start'?'stopped':'running');
+  try{await api('/ops/worker/'+a,{method:'POST'});toast('Worker '+(a==='start'?'started — prices appear in ~10–30 s':'stopped'))}catch(e){toast(e.message,false)}
+  workerBusy=false;await refresh()}
 $('#btnStart').onclick=()=>worker('start');$('#btnStop').onclick=()=>worker('stop');
 
 
