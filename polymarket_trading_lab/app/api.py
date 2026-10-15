@@ -1,0 +1,438 @@
+"""Minimal local API and browser dashboard for the paper account."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import desc, func, select
+from sqlalchemy.orm import Session
+
+from .config import get_settings
+from .accounts import (
+    AccountDataError,
+    PolymarketPublicAccountSource,
+    ReadOnlyAccountSource,
+    persist_account_observation,
+)
+from .database import SessionLocal, get_session, init_db
+from .models import AccountActivityRecord, AccountReconciliationRecord, AccountSnapshotRecord, Market, PaperOrder, Position, ReplayDecision, ReplayRun, StrategyDecision, SystemHealth
+from .paper import PaperTrading
+from .replay import ReplayService
+from .risk import RiskChecker, RiskLimits
+from .runner import StrategyRunner
+from .strategy import CurrentBook, M1Strategy
+from .worker_control import worker_controller
+
+
+app = FastAPI(title="Polymarket Trading Lab", version="0.1.0")
+
+
+class MarketCreate(BaseModel):
+    market_key: str = Field(min_length=1, max_length=200)
+    question: str = Field(min_length=1)
+    end_time: datetime
+
+
+class OrderCreate(BaseModel):
+    market_id: int
+    token: str
+    side: str
+    price: Decimal = Field(gt=0, le=1)
+    quantity: Decimal = Field(gt=0)
+    auto_fill: bool = False
+
+
+class BookEvaluate(BaseModel):
+    observed_at: datetime
+    yes_bid: Decimal | None = None
+    yes_bid_size: Decimal = Field(default=0, ge=0)
+    no_bid: Decimal | None = None
+    no_bid_size: Decimal = Field(default=0, ge=0)
+    now: datetime | None = None
+
+
+class ReplayCreate(BaseModel):
+    events: list[dict[str, Any]] = Field(min_length=1)
+    name: str = Field(default="API replay", min_length=1, max_length=200)
+    source: str = Field(default="api", min_length=1, max_length=300)
+
+
+def get_account_source(account_id: str) -> ReadOnlyAccountSource:
+    """FastAPI dependency kept injectable for mocked public account tests."""
+
+    settings = get_settings()
+    return PolymarketPublicAccountSource(
+        account_id,
+        base_url=settings.account_data_base_url,
+        positions_path=settings.account_positions_path,
+        activity_path=settings.account_activity_path,
+    )
+
+
+def _iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _paper_broker(session: Session) -> PaperTrading:
+    settings = get_settings()
+    return PaperTrading(
+        session,
+        initial_cash=settings.initial_cash,
+        risk_checker=RiskChecker(
+            RiskLimits(
+                max_order_exposure=settings.max_order_exposure,
+                max_market_exposure=settings.max_market_exposure,
+                max_total_exposure=settings.max_total_exposure,
+                max_daily_loss=settings.max_daily_loss,
+            )
+        ),
+    )
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
+
+
+@app.get("/health")
+def health(session: Session = Depends(get_session)) -> dict[str, object]:
+    settings = get_settings()
+    row = session.scalar(select(SystemHealth).where(SystemHealth.component == "api"))
+    if row is None:
+        row = SystemHealth(component="api", status="ok", details="paper-only local API")
+        session.add(row)
+    else:
+        row.status = "ok"
+        row.checked_at = datetime.now(timezone.utc)
+    session.commit()
+    return {
+        "status": "ok",
+        "mode": "paper" if settings.paper_only else "review-required",
+        "database": settings.database_url.split(":", 1)[0],
+        "queue_model": settings.paper_queue_model,
+        "real_execution": False,
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard() -> str:
+    return """<!doctype html><html><head><meta charset="utf-8"><title>Polymarket Trading Lab</title>
+    <style>body{font:15px system-ui;max-width:1200px;margin:32px auto;padding:0 20px;background:#fafafa;color:#17202a}header{display:flex;justify-content:space-between;align-items:center;gap:16px}.badge{background:#dff7e8;color:#176b38;padding:6px 10px;border-radius:999px;font-weight:700}button{padding:8px 12px;border:1px solid #ccd4dc;border-radius:6px;background:white;cursor:pointer}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:20px 0}.card{background:white;border:1px solid #e0e5ea;border-radius:10px;padding:16px}.value{font-size:24px;font-weight:700;margin-top:6px}table{width:100%;border-collapse:collapse}td,th{text-align:left;border-bottom:1px solid #edf0f2;padding:8px 4px;font-size:13px}section{margin-top:20px}small{color:#64707d}.danger{background:#fff2f0;color:#9d251b}</style></head>
+    <body><header><div><h1>Polymarket Trading Lab</h1><small>Local paper operations console</small></div><div><span class="badge">PAPER ONLY · LIVE DISABLED</span> <button onclick="load()">Refresh</button></div></header>
+    <section class="grid" id="cards"><div class="card">Loading…</div></section>
+    <section class="card"><h2>Worker</h2><p id="worker">Loading…</p><button onclick="workerAction('start')">Start paper worker</button> <button class="danger" onclick="workerAction('stop')">Stop paper worker</button></section>
+    <section class="card"><h2>Recent strategy decisions</h2><div id="decisions">Loading…</div></section>
+    <section class="card"><h2>Recent replay runs</h2><div id="replays">Loading…</div></section>
+    <script>const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function load(){let r=await fetch('/ops/overview');let x=await r.json();let p=x.portfolio;document.querySelector('#cards').innerHTML=[['Cash',p.cash],['Realized P&L',p.realized_pnl],['Open orders',x.stats.open_orders],['Markets',x.stats.markets],['Replay runs',x.stats.replay_runs]].map(a=>`<div class="card"><small>${a[0]}</small><div class="value">${esc(a[1])}</div></div>`).join('');let w=x.worker;document.querySelector('#worker').innerHTML=`<strong>${esc(w.status)}</strong> · ${esc(w.details)}<br><small>last check: ${esc(w.checked_at||'never')} · real execution: ${esc(w.real_execution)}</small>`;document.querySelector('#decisions').innerHTML='<table><tr><th>Time</th><th>Market</th><th>Reason</th><th>Intents</th></tr>'+x.decisions.map(d=>`<tr><td>${esc(d.decision_time)}</td><td>${esc(d.market_id)}</td><td>${esc(d.reason)}</td><td>${esc(d.intents)}</td></tr>`).join('')+'</table>';document.querySelector('#replays').innerHTML='<table><tr><th>Started</th><th>Name</th><th>Status</th><th>Events</th><th>Net P&L</th></tr>'+x.replays.map(d=>`<tr><td>${esc(d.started_at)}</td><td>${esc(d.name)}</td><td>${esc(d.status)}</td><td>${esc(d.event_count)}</td><td>${esc(d.net_pnl)}</td></tr>`).join('')+'</table>'}async function workerAction(action){await fetch('/ops/worker/'+action,{method:'POST'});await load()}load();</script></body></html>"""
+
+
+@app.get("/markets")
+def markets(session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    return [
+        {"id": m.id, "market_key": m.market_key, "question": m.question, "end_time": _iso(m.end_time), "status": m.status}
+        for m in session.scalars(select(Market).order_by(desc(Market.created_at)))
+    ]
+
+
+@app.post("/markets", status_code=201)
+def create_market(payload: MarketCreate, session: Session = Depends(get_session)) -> dict[str, object]:
+    if payload.end_time.tzinfo is None:
+        raise HTTPException(400, "end_time must include a timezone")
+    market = Market(market_key=payload.market_key, question=payload.question, end_time=payload.end_time)
+    session.add(market)
+    session.commit()
+    return {"id": market.id, "market_key": market.market_key, "status": market.status}
+
+
+@app.get("/orders")
+def orders(session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    return [
+        {"id": o.id, "client_order_id": o.client_order_id, "market_id": o.market_id, "token": o.token,
+         "side": o.side, "price": str(o.price), "quantity": str(o.quantity), "filled_quantity": str(o.filled_quantity),
+         "status": o.status, "reject_reason": o.reject_reason, "simulation_model": o.simulation_model,
+         "queue_ahead_initial": str(o.queue_ahead_initial), "queue_ahead_remaining": str(o.queue_ahead_remaining),
+         "queue_consumed": str(o.queue_consumed)}
+        for o in session.scalars(select(PaperOrder).order_by(desc(PaperOrder.created_at)))
+    ]
+
+
+@app.post("/paper/orders", status_code=201)
+def create_paper_order(payload: OrderCreate, session: Session = Depends(get_session)) -> dict[str, object]:
+    market = session.get(Market, payload.market_id)
+    if market is None:
+        raise HTTPException(404, "market not found")
+    broker = _paper_broker(session)
+    try:
+        order = broker.submit_order(market, payload.token, payload.side, payload.price, payload.quantity, auto_fill=payload.auto_fill)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    session.commit()
+    return {"id": order.id, "status": order.status, "client_order_id": order.client_order_id, "reject_reason": order.reject_reason}
+
+
+@app.get("/portfolio")
+def portfolio(session: Session = Depends(get_session)) -> dict[str, object]:
+    broker = _paper_broker(session)
+    positions = session.scalars(select(Position).order_by(Position.market_id, Position.token))
+    return {"mode": "paper", "cash": str(broker.cash_balance()), "realized_pnl": str(broker.realized_pnl()),
+             "positions": [{"market_id": p.market_id, "token": p.token, "quantity": str(p.quantity),
+                             "average_entry_price": str(p.average_entry_price), "realized_pnl": str(p.realized_pnl)} for p in positions]}
+
+
+def _replay_summary(run: ReplayRun) -> dict[str, object]:
+    return {
+        "id": run.id, "name": run.name, "source": run.source, "strategy": run.strategy_name,
+        "status": run.status, "started_at": _iso(run.started_at), "completed_at": _iso(run.completed_at),
+        "event_count": run.event_count, "market_count": run.market_count,
+        "decision_count": run.decision_count, "actionable_decision_count": run.actionable_decision_count,
+        "orders_created": run.orders_created, "fills": run.fills, "settlements": run.settlements,
+        "initial_cash": str(run.initial_cash), "final_cash": str(run.final_cash),
+        "realized_pnl": str(run.realized_pnl), "net_pnl": str(run.net_pnl),
+        "positions": json.loads(run.positions_json or "[]"),
+        "summary": json.loads(run.summary_json or "{}"), "error": run.error,
+    }
+
+
+@app.get("/ops/worker/status")
+def worker_status(session: Session = Depends(get_session)) -> dict[str, object]:
+    return worker_controller.status(session)
+
+
+@app.post("/ops/worker/start")
+async def start_worker() -> dict[str, object]:
+    # The controller starts only PaperMarketWorker; live execution remains unavailable.
+    return await worker_controller.start(SessionLocal)
+
+
+@app.post("/ops/worker/stop")
+async def stop_worker() -> dict[str, object]:
+    return await worker_controller.stop(SessionLocal)
+
+
+@app.get("/ops/overview")
+def operations_overview(session: Session = Depends(get_session)) -> dict[str, object]:
+    return {
+        "mode": "paper", "real_execution": False,
+        "worker": worker_controller.status(session),
+        "health": [{"component": row.component, "status": row.status, "checked_at": _iso(row.checked_at), "details": row.details}
+                    for row in session.scalars(select(SystemHealth).order_by(SystemHealth.component))],
+        "portfolio": portfolio(session),
+        "stats": {
+            "markets": session.scalar(select(func.count(Market.id))) or 0,
+            "open_orders": session.scalar(select(func.count(PaperOrder.id)).where(PaperOrder.status.in_(("open", "partially_filled")))) or 0,
+            "decisions": session.scalar(select(func.count(StrategyDecision.id))) or 0,
+            "fills": session.scalar(select(func.count(PaperOrder.id)).where(PaperOrder.status == "filled")) or 0,
+            "replay_runs": session.scalar(select(func.count(ReplayRun.id))) or 0,
+        },
+        "decisions": decisions(session)[:20],
+        "replays": [_replay_summary(run) for run in session.scalars(select(ReplayRun).order_by(desc(ReplayRun.created_at)).limit(20))],
+    }
+
+
+@app.get("/decisions")
+def decisions(session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    return [{"id": d.id, "market_id": d.market_id, "strategy": d.strategy_name, "decision_time": _iso(d.decision_time),
+             "reason": d.reason, "intents": d.intents_json, "observations": d.observations_json}
+             for d in session.scalars(select(StrategyDecision).order_by(desc(StrategyDecision.decision_time)).limit(100))]
+
+
+@app.post("/replays", status_code=201)
+def create_replay(payload: ReplayCreate, session: Session = Depends(get_session)) -> dict[str, object]:
+    from .market_data import event_from_mapping
+
+    try:
+        events = [event_from_mapping(event) for event in payload.events]
+        result = ReplayService().execute(session, events, name=payload.name, source=payload.source)
+        session.commit()
+        return _replay_summary(result.run)
+    except (KeyError, TypeError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(400, f"invalid replay: {exc}") from exc
+
+
+@app.get("/replays")
+def replays(session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    return [_replay_summary(run) for run in session.scalars(select(ReplayRun).order_by(desc(ReplayRun.created_at)).limit(100))]
+
+
+@app.get("/replays/{run_id}")
+def replay_detail(run_id: int, session: Session = Depends(get_session)) -> dict[str, object]:
+    run = session.get(ReplayRun, run_id)
+    if run is None:
+        raise HTTPException(404, "replay run not found")
+    result = _replay_summary(run)
+    result["decisions"] = [
+        {"id": decision.id, "market_key": decision.market_key, "strategy": decision.strategy_name,
+         "decision_time": _iso(decision.decision_time), "reason": decision.reason,
+         "intents": json.loads(decision.intents_json or "[]"),
+         "observations": json.loads(decision.observations_json or "{}")}
+        for decision in session.scalars(select(ReplayDecision).where(ReplayDecision.run_id == run_id).order_by(ReplayDecision.decision_time))
+    ]
+    return result
+
+
+@app.post("/paper/evaluate/{market_id}", status_code=201)
+def evaluate_paper_strategy(market_id: int, payload: BookEvaluate, session: Session = Depends(get_session)) -> dict[str, object]:
+    market = session.get(Market, market_id)
+    if market is None:
+        raise HTTPException(404, "market not found")
+    if payload.observed_at.tzinfo is None or (payload.now is not None and payload.now.tzinfo is None):
+        raise HTTPException(400, "timestamps must include a timezone")
+    broker = _paper_broker(session)
+    runner = StrategyRunner(session, M1Strategy(), broker)
+    now = payload.now or datetime.now(timezone.utc)
+    record = runner.evaluate(
+        market,
+        CurrentBook(payload.observed_at, payload.yes_bid, payload.yes_bid_size, payload.no_bid, payload.no_bid_size),
+        now,
+    )
+    session.commit()
+    return {"decision_id": record.id, "reason": record.reason, "intents": record.intents_json}
+
+
+def _account_snapshot_json(record: AccountSnapshotRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "provider": record.provider,
+        "account_id": record.account_id,
+        "observed_at": _iso(record.observed_at),
+        "cash": str(record.cash) if record.cash is not None else None,
+        "account_value": str(record.account_value) if record.account_value is not None else None,
+        "metadata": json.loads(record.metadata_json),
+        "positions": [
+            {
+                "market_id": position.market_id,
+                "token": position.token,
+                "quantity": str(position.quantity),
+                "average_price": str(position.average_price),
+                "current_price": str(position.current_price) if position.current_price is not None else None,
+                "current_value": str(position.current_value) if position.current_value is not None else None,
+            }
+            for position in record.positions
+        ],
+    }
+
+
+def _account_reconciliation_json(record: AccountReconciliationRecord) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "provider": record.provider,
+        "account_id": record.account_id,
+        "snapshot_id": record.snapshot_id,
+        "reconciled_at": _iso(record.reconciled_at),
+        "paper_cash": str(record.paper_cash) if record.paper_cash is not None else None,
+        "observed_cash": str(record.observed_cash) if record.observed_cash is not None else None,
+        "cash_difference": str(record.cash_difference) if record.cash_difference is not None else None,
+        "status": record.status,
+        "differences": json.loads(record.differences_json),
+    }
+
+
+@app.post("/accounts/{account_id}/sync", status_code=201)
+def sync_account(
+    account_id: str,
+    session: Session = Depends(get_session),
+    source: ReadOnlyAccountSource = Depends(get_account_source),
+) -> dict[str, object]:
+    """Fetch and persist public account observations without changing paper state."""
+
+    if source is None or account_id.strip() == "":
+        raise HTTPException(400, "account_id must not be empty")
+    try:
+        snapshot, reconciliation = persist_account_observation(
+            session,
+            source,
+            provider=getattr(source, "provider", "unknown"),
+        )
+        session.commit()
+    except (AccountDataError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(502, str(exc)) from exc
+    return {
+        "snapshot": _account_snapshot_json(snapshot),
+        "reconciliation": _account_reconciliation_json(reconciliation),
+        "paper_mutated": False,
+    }
+
+
+@app.get("/accounts/{account_id}")
+def account(account_id: str, session: Session = Depends(get_session)) -> dict[str, object]:
+    """Return the latest persisted observation and reconciliation."""
+
+    snapshot = session.scalar(
+        select(AccountSnapshotRecord)
+        .where(AccountSnapshotRecord.account_id == account_id)
+        .order_by(desc(AccountSnapshotRecord.observed_at))
+    )
+    if snapshot is None:
+        raise HTTPException(404, "account has not been synced")
+    reconciliation = session.scalar(
+        select(AccountReconciliationRecord)
+        .where(AccountReconciliationRecord.snapshot_id == snapshot.id)
+        .order_by(desc(AccountReconciliationRecord.reconciled_at))
+    )
+    return {
+        "snapshot": _account_snapshot_json(snapshot),
+        "reconciliation": _account_reconciliation_json(reconciliation) if reconciliation else None,
+    }
+
+
+@app.get("/accounts/{account_id}/snapshots")
+def account_snapshots(account_id: str, session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    records = session.scalars(
+        select(AccountSnapshotRecord)
+        .where(AccountSnapshotRecord.account_id == account_id)
+        .order_by(desc(AccountSnapshotRecord.observed_at))
+        .limit(100)
+    )
+    return [_account_snapshot_json(record) for record in records]
+
+
+@app.get("/accounts/{account_id}/activities")
+def account_activities(account_id: str, session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    records = session.scalars(
+        select(AccountActivityRecord)
+        .where(AccountActivityRecord.account_id == account_id)
+        .order_by(desc(AccountActivityRecord.occurred_at))
+        .limit(200)
+    )
+    return [
+        {
+            "id": record.id,
+            "provider": record.provider,
+            "account_id": record.account_id,
+            "activity_id": record.activity_id,
+            "occurred_at": _iso(record.occurred_at),
+            "activity_type": record.activity_type,
+            "market_id": record.market_id,
+            "token": record.token,
+            "side": record.side,
+            "quantity": str(record.quantity) if record.quantity is not None else None,
+            "price": str(record.price) if record.price is not None else None,
+            "cash_amount": str(record.cash_amount) if record.cash_amount is not None else None,
+            "transaction_hash": record.transaction_hash,
+            "raw": record.raw_json,
+        }
+        for record in records
+    ]
+
+
+@app.get("/accounts/{account_id}/reconciliations")
+def account_reconciliations(account_id: str, session: Session = Depends(get_session)) -> list[dict[str, object]]:
+    records = session.scalars(
+        select(AccountReconciliationRecord)
+        .where(AccountReconciliationRecord.account_id == account_id)
+        .order_by(desc(AccountReconciliationRecord.reconciled_at))
+        .limit(100)
+    )
+    return [_account_reconciliation_json(record) for record in records]
