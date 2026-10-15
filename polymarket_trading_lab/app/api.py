@@ -301,6 +301,8 @@ def live_ticks(market_id: int, session: Session = Depends(get_session)) -> dict[
     return {
         "market_id": market.id, "question": market.question, "end_time": _iso(market.end_time),
         "quote": _quote_json(quote) if quote else None,
+        "m1": {"min": float(get_settings().m1_min_price), "max": float(get_settings().m1_max_price),
+               "window": get_settings().m1_entry_window_seconds},
         "ticks": [
             {"t": _iso(tick.observed_at), "yes": str(tick.yes_bid) if tick.yes_bid is not None else None,
              "no": str(tick.no_bid) if tick.no_bid is not None else None}
