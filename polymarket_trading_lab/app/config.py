@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     worker_require_crypto: bool = True
     min_market_duration_minutes: int = Field(default=10, ge=1)
     max_market_duration_minutes: int = Field(default=20, ge=1)
+    m1_min_price: Decimal = Field(default=Decimal("0.95"), gt=0, lt=1)
+    m1_max_price: Decimal = Field(default=Decimal("1.00"), gt=0, le=1)
+    m1_entry_window_seconds: int = Field(default=120, ge=5, le=1200)
+    market_keywords: str = "bitcoin,btc,ethereum,eth,solana,sol,xrp,doge,dogecoin,bnb,hype,zec,crypto"
     # Auto-guard for strategy-opened positions: stop = entry - offset (0 disables).
     auto_stop_loss_offset: Decimal = Field(default=Decimal("0.05"), ge=0, lt=1)
     auto_take_profit_offset: Decimal = Field(default=Decimal("0"), ge=0, lt=1)

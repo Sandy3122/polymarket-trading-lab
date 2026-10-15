@@ -68,9 +68,22 @@ class PaperMarketWorker:
         self.settings = settings or get_settings()
         self.session_factory = session_factory
         self.client = client or PolymarketPublicClient()
-        self.strategy = strategy or M1Strategy(M1Config(max_order_size=self.settings.max_order_exposure))
+        self._strategy_override = strategy
         self._seen_trades: set[tuple[str, str, str, str, str]] = set()
         self._last_book: dict[str, tuple[object, ...]] = {}
+
+    @property
+    def strategy(self) -> M1Strategy:
+        """Built per decision so dashboard setting changes apply immediately."""
+
+        if self._strategy_override is not None:
+            return self._strategy_override
+        cfg = self.settings
+        return M1Strategy(M1Config(
+            min_price=cfg.m1_min_price, max_price=cfg.m1_max_price, max_order_size=cfg.max_order_exposure,
+            max_book_age=timedelta(seconds=cfg.max_market_data_age_seconds),
+            entry_window=timedelta(seconds=cfg.m1_entry_window_seconds),
+        ))
 
     def _broker(self, session: Session) -> PaperTrading:
         return PaperTrading(
@@ -155,7 +168,8 @@ class PaperMarketWorker:
             return "duration_outside_window"
         text = f"{snapshot.question} {snapshot.slug or ''} {snapshot.category or ''}".lower()
         tokens = set(re.split(r"[^a-z0-9]+", text))
-        if not tokens & CRYPTO_KEYWORDS:
+        keywords = {k.strip().lower() for k in self.settings.market_keywords.split(",") if k.strip()}
+        if not tokens & keywords:
             return "not_crypto"
         return None
 
@@ -377,6 +391,10 @@ class PaperMarketWorker:
 
     async def run_forever(self) -> None:
         init_db()
+        from .runtime_settings import load_overrides
+
+        with self.session_factory() as session:
+            load_overrides(session)
         while True:
             delay = self.settings.worker_refresh_seconds
             try:

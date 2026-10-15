@@ -28,6 +28,7 @@ from .paper import PaperTrading
 from .replay import ReplayService
 from .risk import RiskChecker, RiskLimits
 from .runner import StrategyRunner
+from .runtime_settings import apply_changes, describe, load_overrides, reset_all
 from .strategy import CurrentBook, M1Strategy
 from .trading import TradeError, clear_exit, market_trade, portfolio_view, set_exit
 from .worker_control import worker_controller
@@ -119,6 +120,9 @@ def _paper_broker(session: Session) -> PaperTrading:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    with SessionLocal() as session:
+        load_overrides(session)
+        session.commit()
 
 
 @app.get("/health")
@@ -144,6 +148,29 @@ def health(session: Session = Depends(get_session)) -> dict[str, object]:
 @app.get("/", response_class=HTMLResponse)
 def dashboard() -> str:
     return DASHBOARD_HTML
+
+
+@app.get("/settings")
+def get_runtime_settings() -> dict[str, object]:
+    return {"fields": describe(), "paper_only": True, "data_source": "Polymarket public CLOB/Gamma API (no API key required)"}
+
+
+@app.put("/settings")
+def put_runtime_settings(changes: dict[str, Any], session: Session = Depends(get_session)) -> dict[str, object]:
+    try:
+        apply_changes(session, changes)
+    except ValueError as exc:  # includes pydantic ValidationError
+        session.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    session.commit()
+    return {"fields": describe()}
+
+
+@app.post("/settings/reset")
+def reset_runtime_settings(session: Session = Depends(get_session)) -> dict[str, object]:
+    reset_all(session)
+    session.commit()
+    return {"fields": describe()}
 
 
 @app.get("/markets")
@@ -213,6 +240,7 @@ def live_markets(session: Session = Depends(get_session)) -> list[dict[str, obje
             "end_time": _iso(market.end_time),
             "seconds_left": int((market.end_time - now).total_seconds()),
             "quote": _quote_json(quote),
+            "spark": [float(t.yes_bid) for t in live_quotes.ticks(key)[-60:] if t.yes_bid is not None],
         })
     return sorted(rows, key=lambda row: row["end_time"] or "")
 

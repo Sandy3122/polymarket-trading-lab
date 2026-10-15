@@ -113,6 +113,16 @@ class Position(Base):
     market: Mapped[Market] = relationship(back_populates="positions")
 
 
+class AppSetting(Base):
+    """Dashboard-edited runtime overrides of Settings (value stored as text)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, onupdate=utc_now)
+
+
 class PositionExit(Base):
     """Stop-loss / take-profit levels (token bid prices) guarding one position."""
 

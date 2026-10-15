@@ -87,3 +87,25 @@ def test_auto_exit_guards_new_position_without_overriding_manual(session: Sessio
     assert Decimal(view["stop_loss_price"]) == Decimal("0.57") and Decimal(view["take_profit_price"]) == Decimal("0.72")
     assert apply_auto_exit(session, market, "YES", Decimal("0.10"), Decimal("0")) is False  # active levels kept
     assert apply_auto_exit(session, market, "NO", Decimal("0.05"), Decimal("0")) is False  # no position
+
+
+def test_runtime_settings_validate_apply_and_persist(session: Session) -> None:
+    from app.config import Settings
+    from app.models import AppSetting
+    from app.runtime_settings import apply_changes, describe, load_overrides
+
+    settings = Settings()
+    apply_changes(session, {"max_daily_loss": "55", "worker_require_crypto": "false", "market_keywords": "btc"}, settings)
+    assert settings.max_daily_loss == Decimal("55") and settings.worker_require_crypto is False
+    assert session.get(AppSetting, "max_daily_loss").value == "55"
+    with pytest.raises(ValueError):
+        apply_changes(session, {"max_daily_loss": "-1"}, settings)
+    with pytest.raises(ValueError, match="below max"):
+        apply_changes(session, {"m1_min_price": "0.99", "m1_max_price": "0.9"}, settings)
+    with pytest.raises(ValueError, match="not editable"):
+        apply_changes(session, {"database_url": "x"}, settings)
+    assert settings.max_daily_loss == Decimal("55")
+    fresh = Settings()
+    load_overrides(session, fresh)
+    assert fresh.max_daily_loss == Decimal("55")
+    assert {f["key"] for f in describe(fresh)} >= {"max_order_exposure", "market_keywords"}
